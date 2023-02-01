@@ -100,7 +100,7 @@ class DeformingPlateModel(torch.nn.Module):
         wdsts : torch.LongTensor,
         unnorm : bool = True
     ) -> torch.Tensor:
-        """Predicts Delta V"""
+        """Predicts Velocity"""
 
         B = velocity.shape[0]
 
@@ -113,6 +113,10 @@ class DeformingPlateModel(torch.nn.Module):
                 .squeeze() \
                 .expand((B, -1, -1))
 
+        # TODO: In the original code, velocity (target_world_pos - world_pos) is
+        # given but the network also somehow predicts it? Need to understand
+        # what are network inputs and what are predicted outputs more clearly
+        # and adjust this as necessary.
         node_features = torch.cat([velocity, node_type_oh], dim=-1)
 
         #
@@ -186,3 +190,55 @@ class DeformingPlateModel(torch.nn.Module):
         residuals = (delta_x_norm - pred).sum(dim=-1)
         mask = (node_type == NodeType.NORMAL) .squeeze()
         return residuals[:, mask].pow(2).mean()
+
+
+class DeformingPlateData(torch.utils.data.Dataset):
+    def __init__(self, filename):
+        # self.filename = filename
+
+        # data = np.load(self.filename)
+        # self.num_samples = len(data['cells']) - 1
+
+        # self.cells = torch.LongTensor(data['cells'][0, ...])
+        # self.node_type = torch.LongTensor(data['node_type'][0, ...])
+        # self.srcs, self.dsts = GNN.cells_to_edges(self.cells)
+        # self.mesh_pos = data['mesh_pos'].copy()
+        # self.pressure = data['pressure'].copy()
+        # self.velocity = data['velocity'].copy()
+        raise NotImplementedError()
+
+    def __len__(self): return self.num_samples
+
+    def __getitem__(self, idx : int) -> dict:
+        # assert idx < self.num_samples
+
+        # with torch.no_grad():
+        #     return dict(
+        #         cells=self.cells,
+        #         mesh_pos=torch.Tensor(self.mesh_pos[idx, ...]),
+        #         node_type=self.node_type,
+        #         pressure=torch.Tensor(self.pressure[idx, ...]),
+        #         velocity=torch.Tensor(self.velocity[idx, ...]),
+        #         target_velocity=torch.Tensor(self.velocity[idx + 1, ...]),
+        #         srcs=self.srcs,
+        #         dsts=self.dsts
+        #     )
+        raise NotImplementedError()
+
+
+def collate_deforming_plate(batch):
+    # return {
+    #     'cells': batch[0]['cells'],
+    #     'mesh_pos': torch.stack([x['mesh_pos'] for x in batch], dim=0),
+    #     'node_type': batch[0]['node_type'],
+    #     'pressure': torch.stack([x['pressure'] for x in batch], dim=0),
+    #     'velocity': torch.stack([x['velocity'] for x in batch], dim=0),
+    #     'target_velocity': torch.stack([x['target_velocity'] for x in batch], dim=0),
+    #     'srcs': batch[0]['srcs'],
+    #     'dsts': batch[0]['dsts']
+    # }
+    raise NotImplementedError()
+
+
+if __name__ == '__main__':
+    net = DeformingPlateModel()
