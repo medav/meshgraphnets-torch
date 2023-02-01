@@ -6,21 +6,51 @@ import numpy as np
 import unsorted_segsum
 
 
-class NodeType(enum.IntEnum):
-    NORMAL = 0
-    OBSTACLE = 1
-    AIRFOIL = 2
-    HANDLE = 3
-    INFLOW = 4
-    OUTFLOW = 5
-    WALL_BOUNDARY = 6
-    SIZE = 9
+def cells_to_edges(cells : torch.LongTensor) -> tuple[torch.LongTensor, torch.LongTensor]:
+    """
+    cells: int32[M, D]
+    :ret: int32[E], int32[E]
+    """
+
+    if cells.shape[1] == 3:
+        # Triangles
+
+        raw_edges = torch.cat([
+            cells[:, 0:2],
+            cells[:, 1:3],
+            torch.stack([cells[:, 2], cells[:, 0]], dim=1)
+        ], dim=0)
+
+    elif cells.shape[1] == 4:
+        # Tetrahedrons
+
+        raw_edges = torch.cat([
+            cells[:, 0:2],
+            cells[:, 1:3],
+            cells[:, 2:4],
+            torch.stack([cells[:, 0], cells[:, 2]], dim=1),
+            torch.stack([cells[:, 0], cells[:, 3]], dim=1),
+            torch.stack([cells[:, 1], cells[:, 3]], dim=1)
+        ], dim=0)
+
+    else: raise NotImplementedError('Unknown cell type')
+
+    srcs = raw_edges.max(dim=1).values
+    dsts = raw_edges.min(dim=1).values
+
+    edges = torch.stack([srcs, dsts], dim=1)
+    unique_edges = edges.unique(dim=0, sorted=False)
+    srcs, dsts = unique_edges[:, 0], unique_edges[:, 1]
+
+    return torch.cat([srcs, dsts], dim=0), torch.cat([dsts, srcs], dim=0)
+
 
 @dataclass
 class EdgeSet:
     features : torch.Tensor
     senders : torch.Tensor
     receivers : torch.Tensor
+
 
 @dataclass
 class MultiGraph:
@@ -81,6 +111,7 @@ class InvertableNorm(torch.nn.Module):
         mean, std = self.stats
         return x * std + mean
 
+
 class Mlp(torch.nn.Module):
     def __init__(self, input_size : int, widths : list[int], layernorm=True):
         super().__init__()
@@ -91,6 +122,7 @@ class Mlp(torch.nn.Module):
         ] + ([torch.nn.LayerNorm((widths[-1],))] if layernorm else [])))
 
     def forward(self, x): return self.model(x)
+
 
 class GraphNetBlock(torch.nn.Module):
     def __init__(
@@ -114,7 +146,6 @@ class GraphNetBlock(torch.nn.Module):
                 layernorm=True)
             for _ in range(num_edge_sets)
         ])
-
 
     def update_node_features(
         self,
@@ -205,6 +236,7 @@ class GraphNetDecoder(torch.nn.Module):
     def forward(self, graph : MultiGraph) -> torch.Tensor:
         return self.node_mlp(graph.node_features)
 
+
 class GraphNetModel(torch.nn.Module):
     def __init__(
         self,
@@ -231,111 +263,4 @@ class GraphNetModel(torch.nn.Module):
         for block in self.blocks:
             graph = block(graph)
         return self.decoder(graph)
-
-
-class CfdModel(torch.nn.Module):
-    def __init__(
-        self,
-        input_dim : int = 2 + NodeType.SIZE, # vx, vy, one_hot(type)
-        output_dim : int = 2, # vx, vy
-        latent_size : int = 128,
-        num_edge_sets : int = 1,
-        num_layers : int = 2,
-        num_mp_steps : int = 15
-    ):
-        super().__init__()
-        self.graph_net = GraphNetModel(
-            input_dim,
-            3, # 2D rel pos. + length
-            output_dim,
-            latent_size,
-            num_edge_sets,
-            num_layers,
-            num_mp_steps)
-
-        self.out_norm = InvertableNorm((output_dim,))
-        self.node_norm = InvertableNorm((input_dim,))
-        self.edge_norm = InvertableNorm((2 + 1,)) # 2D coord + length
-
-    def forward(
-        self,
-        node_type : torch.LongTensor,
-        velocity : torch.Tensor,
-        mesh_pos : torch.Tensor,
-        srcs : torch.LongTensor,
-        dests : torch.LongTensor,
-        unnorm : bool = True
-    ) -> torch.Tensor:
-        """Predicts Delta V"""
-
-        B = velocity.shape[0]
-
-        node_type_oh = \
-            torch.nn.functional.one_hot(node_type, num_classes=NodeType.SIZE) \
-                .squeeze() \
-                .expand((B, -1, -1))
-
-        node_features = torch.cat([velocity, node_type_oh], dim=-1)
-        rel_mesh_pos = mesh_pos[:, srcs, :] - mesh_pos[:, dests, :]
-
-        edge_features = torch.cat([
-            rel_mesh_pos,
-            torch.norm(rel_mesh_pos, dim=-1, keepdim=True)
-        ], dim=-1)
-
-        graph = MultiGraph(
-            node_features=self.node_norm(node_features),
-            edge_sets=[ EdgeSet(self.edge_norm(edge_features), srcs, dests) ]
-        )
-
-        net_out = self.graph_net(graph)
-
-        if unnorm: return self.out_norm.inverse(net_out)
-        else: return net_out
-
-    def loss(
-        self,
-        node_type : torch.Tensor,
-        velocity : torch.Tensor,
-        mesh_pos : torch.Tensor,
-        srcs : torch.LongTensor,
-        dests : torch.LongTensor,
-        target_velocity : torch.Tensor
-    ) -> torch.Tensor:
-
-        pred = self.forward(
-            node_type,
-            velocity,
-            mesh_pos,
-            srcs,
-            dests,
-            unnorm=False
-        )
-
-        with torch.no_grad():
-            delta_v = target_velocity - velocity
-            delta_v_norm = self.out_norm(delta_v)
-
-        residuals = (delta_v_norm - pred).sum(dim=-1)
-
-        mask = (node_type == NodeType.NORMAL) \
-            .logical_or(node_type == NodeType.OUTFLOW) \
-            .squeeze()
-
-        return residuals[:, mask].pow(2).mean()
-
-
-if __name__ == '__main__':
-    net = CfdModel()
-    print(net)
-
-    loss = net.loss(
-        torch.LongTensor([NodeType.NORMAL for _ in range(3)]),
-        torch.randn(3, 2),
-        torch.LongTensor([[0, 1, 2]]),
-        torch.randn(3, 2),
-        torch.randn(3, 2)
-    )
-
-    loss.backward()
 
