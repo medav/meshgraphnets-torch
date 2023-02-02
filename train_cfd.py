@@ -2,14 +2,13 @@ import os
 import torch
 
 import time
-import dataset
-import model
+import cfd
 
 checkpoint_file = './cylinder_flow_ckpt.pth'
 torch.backends.cuda.matmul.allow_tf32 = True
 
 dev = torch.device('cuda:0')
-net = model.CfdModel()
+net = cfd.CfdModel()
 
 class RollingAverage:
     def __init__(self, size):
@@ -39,7 +38,7 @@ opt = torch.optim.Adam(net.parameters(), lr=1e-4)
 
 
 if warmup:
-    ds = dataset.CylinderFlowData('./data/cylinder_flow_np/train/t0.npz')
+    ds = cfd.CylinderFlowData('./data/cylinder_flow_np/train/t0.npz')
     dl = torch.utils.data.DataLoader(
         ds,
         shuffle=True,
@@ -47,7 +46,7 @@ if warmup:
         num_workers=8,
         pin_memory=dev.type == 'cuda',
         pin_memory_device=str(dev),
-        collate_fn=dataset.collate_cfd)
+        collate_fn=cfd.collate_cfd)
 
     for i, batch in enumerate(dl):
         print(f'Warming normalizers ({i}/{len(ds)})...')
@@ -56,7 +55,7 @@ if warmup:
             batch['velocity'].to(dev),
             batch['mesh_pos'].to(dev),
             batch['srcs'].to(dev),
-            batch['dests'].to(dev),
+            batch['dsts'].to(dev),
             batch['target_velocity'].to(dev)
         )
 
@@ -69,7 +68,7 @@ def train_on_data(ds):
         num_workers=8,
         pin_memory=dev.type == 'cuda',
         pin_memory_device=str(dev),
-        collate_fn=dataset.collate_cfd)
+        collate_fn=cfd.collate_cfd)
 
     ni = 0
 
@@ -108,7 +107,7 @@ while True:
     for ti in range(1000):
         filename = f'./data/cylinder_flow_np/train/t{ti}.npz'
         print(f'Training on {filename}...')
-        ds = dataset.CylinderFlowData(filename)
+        ds = cfd.CylinderFlowData(filename)
         num_iters, should_break = train_on_data(ds)
         total_iters += num_iters
 
