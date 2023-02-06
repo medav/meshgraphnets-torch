@@ -1,32 +1,35 @@
+import sys
+sys.path.append('.')
 
+import time
 import torch
-from torch.profiler import profile, record_function, ProfilerActivity
+import cfd
 
-import dataset
-import model
-# import perftools
+NUM_ITERS = 5
+BATCH_SIZE = 8
+NUM_THREADS = 32
 
-torch.backends.cuda.matmul.allow_tf32 = True
+torch.set_num_threads(NUM_THREADS)
 
-dev = torch.device('cuda:0')
-net = model.CfdModel().to(dev)
+dev = torch.device('cpu')
+net = cfd.CfdModel().to(dev)
 opt = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
-# print(net)
-
-ds = dataset.CylinderFlowData('./data/cylinder_flow_np/train/t0.npz')
+ds = cfd.CylinderFlowData('./mesh0.npz')
 dl = torch.utils.data.DataLoader(
     ds,
     shuffle=True,
-    batch_size=8,
-    num_workers=8,
+    batch_size=BATCH_SIZE,
+    num_workers=1,
     pin_memory=dev.type == 'cuda',
     pin_memory_device=str(dev),
-    collate_fn=dataset.collate_cfd)
+    collate_fn=cfd.collate_cfd)
 
 batch = next(iter(dl))
 
-for _ in range(10):
+
+t0 = time.perf_counter()
+for _ in range(NUM_ITERS):
     opt.zero_grad()
 
     loss = net.loss(
@@ -34,28 +37,15 @@ for _ in range(10):
         batch['velocity'].to(dev),
         batch['mesh_pos'].to(dev),
         batch['srcs'].to(dev),
-        batch['dests'].to(dev),
+        batch['dsts'].to(dev),
         batch['target_velocity'].to(dev)
     ).backward()
 
     opt.step()
 
-# with perftools.pinperf.perf_roi(0, 'mgn', 'train'):
-with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
-
-    opt.zero_grad()
-
-    loss = net.loss(
-        batch['node_type'].to(dev),
-        batch['velocity'].to(dev),
-        batch['mesh_pos'].to(dev),
-        batch['srcs'].to(dev),
-        batch['dests'].to(dev),
-        batch['target_velocity'].to(dev)
-    ).backward()
-
-    opt.step()
-
-print(prof \
-    .key_averages(group_by_input_shape=False, group_by_stack_n=0) \
-    .table(sort_by="cuda_time_total", row_limit=-1, top_level_events_only=False))
+t1 = time.perf_counter()
+print(f'Batch Size: {BATCH_SIZE}')
+print(f'Num Iters: {NUM_ITERS}')
+print(f'Num Threads: {NUM_THREADS}')
+print(f'Elapsed time: {t1 - t0:.2f} seconds')
+print(f'Throughput: {NUM_ITERS * BATCH_SIZE / (t1 - t0):.2f} samp/sec')
