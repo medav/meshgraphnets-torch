@@ -3,3 +3,4 @@ ckpt
 *.pth
 __pycache__
 *.pyc
+.vscode

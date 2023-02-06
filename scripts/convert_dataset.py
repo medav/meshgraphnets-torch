@@ -1,0 +1,63 @@
+import sys
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+import tensorflow as tf
+import numpy as np
+import json
+import functools
+
+tf._logging
+
+dataset_name, split = sys.argv[1:3]
+
+
+def _parse(proto, meta):
+    """Parses a trajectory from tf.Example."""
+    feature_lists = {k: tf.io.VarLenFeature(tf.string)
+                    for k in meta['field_names']}
+    features = tf.io.parse_single_example(proto, feature_lists)
+    out = {}
+    for key, field in meta['features'].items():
+        data = tf.io.decode_raw(features[key].values, getattr(tf, field['dtype']))
+        data = tf.reshape(data, field['shape'])
+        if field['type'] == 'static':
+            data = tf.tile(data, [meta['trajectory_length'], 1, 1])
+        elif field['type'] == 'dynamic_varlen':
+            length = tf.io.decode_raw(features['length_'+key].values, tf.int32)
+            length = tf.reshape(length, [-1])
+            data = tf.RaggedTensor.from_row_lengths(data, row_lengths=length)
+        elif field['type'] != 'dynamic':
+            raise ValueError('invalid data format')
+        out[key] = data
+    return out
+
+
+def load_dataset(dataset_name, split):
+    path = f'data/{dataset_name}'
+    with open(os.path.join(path, 'meta.json'), 'r') as fp:
+        meta = json.loads(fp.read())
+    ds = tf.data.TFRecordDataset(os.path.join(path, split+'.tfrecord'))
+    ds = ds.map(functools.partial(_parse, meta=meta), num_parallel_calls=8)
+    ds = ds.prefetch(1)
+    return ds
+
+
+def convert_to_npdict(example) -> dict:
+    result = {}
+    # example.features.feature is the dictionary
+    for key, feature in example.features.feature.items():
+        # The values are the Feature objects which contain a `kind` which contains:
+        # one of three fields: bytes_list, float_list, int64_list
+
+        kind = feature.WhichOneof('kind')
+        result[key] = np.array(getattr(feature, kind).value)
+
+    return result
+
+
+ds = load_dataset(dataset_name, split)
+
+for record in ds.take(1):
+    for k, v in record.items():
+        print(k, v.shape)
+
