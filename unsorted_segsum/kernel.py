@@ -8,15 +8,26 @@ import random
 import math
 
 cur_path = os.path.dirname(os.path.realpath(__file__))
-src_files = ['extension.cc', 'cpu.cc', 'cuda.cu', 'cuda_kernel.cu']
-src_files = [os.path.join(cur_path, file) for file in src_files]
-c_unsorted_segsum = load('c_unsorted_segsum',
-    src_files,
+cpu_unsorted_segsum = load('cpu_unsorted_segsum',
+    [f'{cur_path}/cpu_extension.cc', f'{cur_path}/cpu.cc'],
     extra_cflags=['-fopenmp', '-O3', '-march=native'],
     extra_ldflags=['-lgomp', '-O3', '-march=native'],
     verbose=True)
 
-import c_unsorted_segsum
+import cpu_unsorted_segsum
+
+if torch.cuda.is_available():
+    cuda_unsorted_segsum = load('cuda_unsorted_segsum',
+        [f'{cur_path}/cuda_extension.cc', f'{cur_path}/cuda.cu', f'{cur_path}/cuda_kernel.cu'],
+        extra_cflags=['-fopenmp', '-O3', '-march=native'],
+        extra_ldflags=['-lgomp', '-O3', '-march=native'],
+        verbose=True)
+
+    import cuda_unsorted_segsum
+
+else:
+    cuda_unsorted_segsum = None
+    print('CUDA not available, cuda_unsorted_segsum will not be available')
 
 def unsorted_segment_sum_ref(
     data : torch.Tensor,
@@ -33,10 +44,14 @@ class UnsortedSegmentSum(torch.autograd.Function):
     def forward(ctx, data : torch.Tensor, indices  : torch.Tensor, num_segments : int) -> torch.Tensor:
         ctx.save_for_backward(indices)
 
+        M = cuda_unsorted_segsum if data.device.type == 'cuda' else cpu_unsorted_segsum
+
+        assert M is not None, f'No backend for {data.device}'
+
         if len(data.shape) == 2:
-            return c_unsorted_segsum.unsorted_segment_sum_fwd_fp32(data, indices, num_segments)
+            return M.unsorted_segment_sum_fwd_fp32(data, indices, num_segments)
         elif len(data.shape) == 3:
-            return c_unsorted_segsum.batched_unsorted_segment_sum_fwd_fp32(data, indices, num_segments)
+            return M.batched_unsorted_segment_sum_fwd_fp32(data, indices, num_segments)
         else:
             raise NotImplementedError()
 
@@ -44,10 +59,14 @@ class UnsortedSegmentSum(torch.autograd.Function):
     def backward(ctx, grad):
         indices, = ctx.saved_tensors
 
+        M = cuda_unsorted_segsum if grad.device.type == 'cuda' else cpu_unsorted_segsum
+
+        assert M is not None, f'No backend for {grad.device}'
+
         if len(grad.shape) == 2:
-            return c_unsorted_segsum.unsorted_segment_sum_bwd_fp32(grad, indices), None, None
+            return M.unsorted_segment_sum_bwd_fp32(grad, indices), None, None
         elif len(grad.shape) == 3:
-            return c_unsorted_segsum.batched_unsorted_segment_sum_bwd_fp32(grad, indices), None, None
+            return M.batched_unsorted_segment_sum_bwd_fp32(grad, indices), None, None
         else:
             raise NotImplementedError()
 
