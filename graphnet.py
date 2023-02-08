@@ -167,8 +167,8 @@ class GraphNetBlock(torch.nn.Module):
         node_features : torch.Tensor,
         edge_set : EdgeSet
     ) -> torch.Tensor:
-        srcs = node_features[:, edge_set.senders, :]
-        dsts = node_features[:, edge_set.receivers, :]
+        srcs = node_features[edge_set.senders, :]
+        dsts = node_features[edge_set.receivers, :]
         edge_features = edge_set.features
         return self.edge_mlps[i](torch.cat([srcs, dsts, edge_features], dim=-1))
 
@@ -196,7 +196,7 @@ class GraphNetEncoder(torch.nn.Module):
     def __init__(
         self,
         node_input_dim : int,
-        edge_input_dim : int,
+        edge_input_dims : list[int],
         latent_size : int,
         num_edge_sets : int,
         num_layers : int
@@ -205,8 +205,8 @@ class GraphNetEncoder(torch.nn.Module):
         mlp_widths = [latent_size] * num_layers + [latent_size]
         self.node_mlp = Mlp(node_input_dim, mlp_widths, layernorm=True)
         self.edge_mlps = torch.nn.ModuleList([
-            Mlp(edge_input_dim, mlp_widths, layernorm=True)
-            for _ in range(num_edge_sets)
+            Mlp(edge_input_dims[i], mlp_widths, layernorm=True)
+            for i in range(num_edge_sets)
         ])
 
     def forward(self, graph : MultiGraph) -> MultiGraph:
@@ -241,7 +241,7 @@ class GraphNetModel(torch.nn.Module):
     def __init__(
         self,
         node_input_dim : int,
-        edge_input_dim : int,
+        edge_input_dims : list[int],
         output_dim : int,
         latent_size : int,
         num_edge_sets : int,
@@ -249,7 +249,7 @@ class GraphNetModel(torch.nn.Module):
         num_mp_steps : int
     ):
         super().__init__()
-        self.encoder = GraphNetEncoder(node_input_dim, edge_input_dim, latent_size, num_edge_sets, num_layers)
+        self.encoder = GraphNetEncoder(node_input_dim, edge_input_dims, latent_size, num_edge_sets, num_layers)
         self.decoder = GraphNetDecoder(latent_size, output_dim, num_layers)
 
         mp_mlp_widths = [latent_size] * num_layers + [latent_size]

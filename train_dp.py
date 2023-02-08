@@ -2,29 +2,14 @@ import os
 import torch
 
 import time
-import cfd
+import deforming_plate as M
 
-checkpoint_file = './cylinder_flow_ckpt.pth'
+checkpoint_file = './deforming_plate_ckpt.pth'
 torch.backends.cuda.matmul.allow_tf32 = True
 
 dev = torch.device('cuda:0')
-net = cfd.CfdModel()
+net = M.DeformingPlateModel()
 
-class RollingAverage:
-    def __init__(self, size):
-        self.size = size
-        self.data = []
-        self.sum = 0
-
-    def add(self, x):
-        self.data.append(x)
-        self.sum += x
-        if len(self.data) > self.size:
-            self.sum -= self.data.pop(0)
-
-    @property
-    def mean(self):
-        return self.sum / len(self.data)
 
 warmup = True
 if os.path.exists(checkpoint_file):
@@ -38,7 +23,7 @@ opt = torch.optim.Adam(net.parameters(), lr=1e-4)
 
 
 if warmup:
-    ds = cfd.CylinderFlowData('./data/cylinder_flow_np/train/t0.npz')
+    ds = M.DeformingPlateData('./data/cylinder_flow_np/train/t0.npz')
     dl = torch.utils.data.DataLoader(
         ds,
         shuffle=True,
@@ -46,7 +31,7 @@ if warmup:
         num_workers=8,
         pin_memory=dev.type == 'cuda',
         pin_memory_device=str(dev),
-        collate_fn=cfd.collate_cfd)
+        collate_fn=M.collate_fn)
 
     for i, batch in enumerate(dl):
         print(f'Warming normalizers ({i}/{len(ds)})...')
@@ -68,7 +53,7 @@ def train_on_data(ds):
         num_workers=8,
         pin_memory=dev.type == 'cuda',
         pin_memory_device=str(dev),
-        collate_fn=cfd.collate_fn)
+        collate_fn=M.collate_fn)
 
     ni = 0
 
@@ -87,8 +72,7 @@ def train_on_data(ds):
             opt.step()
             opt.zero_grad()
 
-            loss_avg.add(loss.item())
-            print(i, loss_avg.mean)
+            print(i, loss.item())
 
             ni += 1
 
@@ -97,8 +81,6 @@ def train_on_data(ds):
 
     return ni, False
 
-
-loss_avg = RollingAverage(100)
 t0 = time.perf_counter()
 total_iters = 0
 should_break = False
@@ -107,7 +89,7 @@ while True:
     for ti in range(1000):
         filename = f'./data/cylinder_flow_np/train/t{ti}.npz'
         print(f'Training on {filename}...')
-        ds = cfd.CylinderFlowData(filename)
+        ds = M.DeformingPlateData(filename)
         num_iters, should_break = train_on_data(ds)
         total_iters += num_iters
 

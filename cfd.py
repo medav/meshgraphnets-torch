@@ -28,7 +28,7 @@ class CfdModel(torch.nn.Module):
         super().__init__()
         self.graph_net = GNN.GraphNetModel(
             input_dim,
-            3, # 2D rel pos. + length
+            [3], # 2D rel pos. + length
             output_dim,
             latent_size,
             num_edge_sets,
@@ -50,15 +50,12 @@ class CfdModel(torch.nn.Module):
     ) -> torch.Tensor:
         """Predicts Delta V"""
 
-        B = velocity.shape[0]
-
         node_type_oh = \
             torch.nn.functional.one_hot(node_type, num_classes=NodeType.SIZE) \
-                .squeeze() \
-                .expand((B, -1, -1))
+                .squeeze()
 
         node_features = torch.cat([velocity, node_type_oh], dim=-1)
-        rel_mesh_pos = mesh_pos[:, srcs, :] - mesh_pos[:, dsts, :]
+        rel_mesh_pos = mesh_pos[srcs, :] - mesh_pos[dsts, :]
 
         edge_features = torch.cat([
             rel_mesh_pos,
@@ -104,7 +101,7 @@ class CfdModel(torch.nn.Module):
             .logical_or(node_type == NodeType.OUTFLOW) \
             .squeeze()
 
-        return residuals[:, mask].pow(2).mean()
+        return residuals[mask].pow(2).mean()
 
 
 class CylinderFlowData(torch.utils.data.Dataset):
@@ -128,7 +125,6 @@ class CylinderFlowData(torch.utils.data.Dataset):
 
         with torch.no_grad():
             return dict(
-                cells=self.cells,
                 mesh_pos=torch.Tensor(self.mesh_pos[idx, ...]),
                 node_type=self.node_type,
                 pressure=torch.Tensor(self.pressure[idx, ...]),
@@ -139,29 +135,66 @@ class CylinderFlowData(torch.utils.data.Dataset):
             )
 
 
-def collate_cfd(batch):
-    return {
-        'cells': batch[0]['cells'],
-        'mesh_pos': torch.stack([x['mesh_pos'] for x in batch], dim=0),
-        'node_type': batch[0]['node_type'],
-        'pressure': torch.stack([x['pressure'] for x in batch], dim=0),
-        'velocity': torch.stack([x['velocity'] for x in batch], dim=0),
-        'target_velocity': torch.stack([x['target_velocity'] for x in batch], dim=0),
-        'srcs': batch[0]['srcs'],
-        'dsts': batch[0]['dsts']
-    }
+def collate_fn(batch):
+    node_offs = torch.LongTensor([
+        0 if i == 0 else batch[i - 1]['node_type'].shape[0]
+        for i in range(len(batch))
+    ]).cumsum(dim=0)
 
+    srcss = []
+    dstss = []
 
-if __name__ == '__main__':
-    net = CfdModel()
-    print(net)
+    for i in range(len(batch)):
+        srcss.append(batch[i]['srcs'] + node_offs[i])
+        dstss.append(batch[i]['dsts'] + node_offs[i])
 
-    loss = net.loss(
-        torch.LongTensor([NodeType.NORMAL for _ in range(3)]),
-        torch.randn(3, 2),
-        torch.LongTensor([[0, 1, 2]]),
-        torch.randn(3, 2),
-        torch.randn(3, 2)
+    return dict(
+        mesh_pos=torch.cat([b['mesh_pos'] for b in batch], dim=0),
+        node_type=torch.cat([b['node_type'] for b in batch], dim=0),
+        pressure=torch.cat([b['pressure'] for b in batch], dim=0),
+        velocity=torch.cat([b['velocity'] for b in batch], dim=0),
+        target_velocity=torch.cat([b['target_velocity'] for b in batch], dim=0),
+        srcs=torch.cat(srcss, dim=0),
+        dsts=torch.cat(dstss, dim=0),
     )
 
-    loss.backward()
+if __name__ == '__main__':
+    import time
+
+    NI = 30
+    BS = 32
+    dev = torch.device('cuda:0')
+    net = CfdModel().to(dev)
+
+    ds = CylinderFlowData('./data/cylinder_flow_np/train/t0.npz')
+
+    dl = torch.utils.data.DataLoader(
+        ds,
+        shuffle=True,
+        batch_size=BS,
+        num_workers=1,
+        pin_memory=dev.type == 'cuda',
+        pin_memory_device=str(dev),
+        collate_fn=collate_fn)
+
+    batch = next(iter(dl))
+
+    with torch.amp.autocast('cuda'):
+        t0 = time.perf_counter()
+        for _ in range(NI):
+            net.loss(
+                batch['node_type'].to(dev),
+                batch['velocity'].to(dev),
+                batch['mesh_pos'].to(dev),
+                batch['srcs'].to(dev),
+                batch['dsts'].to(dev),
+                batch['target_velocity'].to(dev)
+            ).backward()
+        t1 = time.perf_counter()
+
+    print(f'Batch Size: {BS}')
+    print(f'Num Iters: {NI}')
+    print(f'Num Threads: {NI}')
+    print(f'Elapsed time: {t1 - t0:.2f} seconds')
+    print(f'Throughput: {NI * BS / (t1 - t0):.2f} samp/sec')
+

@@ -54,10 +54,17 @@ def convert_to_npdict(example) -> dict:
 
     return result
 
+out_dir = f'data/{dataset_name}_np/{split}'
+os.makedirs(out_dir, exist_ok=True)
 
 ds = load_dataset(dataset_name, split)
 
-for record in ds.take(1):
+for i, record in enumerate(ds):
+    print(f'==== Record {i} ====')
     for k, v in record.items():
         print(k, v.shape)
+
+    np.savez_compressed(os.path.join(out_dir, f'ex{i}.npz'), **record)
+
+
 
