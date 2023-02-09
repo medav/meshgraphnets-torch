@@ -6,6 +6,9 @@
 import torch
 import random
 import enum
+import json
+import os
+import functools
 import numpy as np
 import graphnet as GNN
 
@@ -187,77 +190,58 @@ class DeformingPlateModel(torch.nn.Module):
         mask = (node_type == NodeType.NORMAL) .squeeze()
         return residuals[mask].pow(2).mean()
 
+@functools.lru_cache(maxsize=2048)
+def load_npz_cached(fname):
+    return np.load(fname)
 
 class DeformingPlateData(torch.utils.data.Dataset):
-    def __init__(self, filename):
-        self.filename = filename
+    # Train set has avg 1276 nodes/samp
 
-        data = np.load(self.filename)
-        self.num_samples = len(data['cells']) - 1
+    def __init__(self, path):
+        self.path = path
+        self.meta = json.loads(open(os.path.join(path, 'meta.json')).read())
+        self.files = self.meta['files']
+        self.num_samples = sum(self.files[f] - 1 for f in self.files)
 
-        self.cells = torch.LongTensor(data['cells'][0, ...])
-        self.node_type = torch.LongTensor(data['node_type'][0, ...]).squeeze()
-        self.srcs, self.dsts = GNN.cells_to_edges(self.cells)
-        self.mesh_pos = data['mesh_pos'].copy()
-        self.world_pos = data['world_pos'].copy()
-        self.stress = data['stress'].copy()
+    @property
+    def avg_nodes_per_sample(self):
+        total_nodes = 0
+        total_samples = 0
+        for fname, num_steps in self.files.items():
+            data = np.load(os.path.join(self.path, fname))
+            total_nodes += data['mesh_pos'].shape[1] * (num_steps - 1)
+            total_samples += num_steps - 1
+
+        return total_nodes / total_samples
+
+
+    def idx_to_file(self, sample_id):
+        for fname, num_steps in self.files.items():
+            if sample_id < (num_steps - 1): return fname, sample_id
+            else: sample_id -= (num_steps - 1)
+        raise IndexError()
 
     def __len__(self): return self.num_samples
 
     def __getitem__(self, idx : int) -> dict:
-        assert idx < self.num_samples
+        fname, sid = self.idx_to_file(idx)
+        data = load_npz_cached(os.path.join(self.path, fname))
 
-        world_pos = torch.Tensor(self.world_pos[idx, ...])
-        wsrcs, wdsts = construct_world_edges(world_pos, self.node_type)
+        node_type = torch.LongTensor(data['node_type'][sid, ...]).squeeze()
+        cells = torch.LongTensor(data['cells'][sid, ...])
+        srcs, dsts = GNN.cells_to_edges(cells)
+        world_pos = torch.Tensor(data['world_pos'][sid, ...])
+        wsrcs, wdsts = construct_world_edges(world_pos, node_type)
 
         return dict(
             node_offs=torch.LongTensor([0]),
-            node_type=self.node_type,
-            mesh_pos=torch.Tensor(self.mesh_pos[idx, ...]),
+            node_type=torch.LongTensor(data['node_type'][sid, ...]).squeeze(),
+            mesh_pos=torch.Tensor(data['mesh_pos'][sid, ...]),
             world_pos=world_pos,
-            target_world_pos=torch.Tensor(self.world_pos[idx + 1, ...]),
-            stress=torch.Tensor(self.stress[idx, ...]),
-            srcs=self.srcs,
-            dsts=self.dsts,
-            wsrcs=wsrcs,
-            wdsts=wdsts
-        )
-
-
-class TestDeformingPlateData(torch.utils.data.Dataset):
-    def __init__(self, n=32):
-        self.n = n
-
-        self.node_type = torch.LongTensor(
-            [NodeType.NORMAL, NodeType.NORMAL, NodeType.OBSTACLE]
-        )
-
-        self.mesh_pos = torch.randn((3, 3))
-        self.world_pos = torch.randn((3, 3))
-        self.target_world_pos = torch.randn((3, 3))
-        self.stress = torch.randn((3, 3))
-
-        self.srcs = torch.LongTensor([0, 0, 1, 1, 2, 2])
-        self.dsts = torch.LongTensor([1, 2, 0, 2, 0, 1])
-
-        self.wsrcs = torch.LongTensor([0, 0, 1, 2])
-        self.wdsts = torch.LongTensor([1, 2, 0, 0])
-
-
-    def __len__(self): return self.n
-
-    def __getitem__(self, idx : int) -> dict:
-        return dict(
-            node_offs=torch.LongTensor([0]),
-            node_type=self.node_type,
-            mesh_pos=self.mesh_pos,
-            world_pos=self.world_pos,
-            target_world_pos=self.target_world_pos,
-            stress=self.stress,
-            srcs=self.srcs,
-            dsts=self.dsts,
-            wsrcs=self.wsrcs,
-            wdsts=self.wdsts
+            target_world_pos=torch.Tensor(data['world_pos'][sid + 1, ...]),
+            stress=torch.Tensor(data['stress'][sid, ...]),
+            srcs=srcs, dsts=dsts,
+            wsrcs=wsrcs, wdsts=wdsts
         )
 
 

@@ -9,7 +9,8 @@ torch.backends.cuda.matmul.allow_tf32 = True
 
 dev = torch.device('cuda:0')
 net = M.DeformingPlateModel()
-
+batch_size = 48
+warmup_samples = 1000
 
 warmup = True
 if os.path.exists(checkpoint_file):
@@ -20,83 +21,63 @@ if os.path.exists(checkpoint_file):
 net.to(dev)
 
 opt = torch.optim.Adam(net.parameters(), lr=1e-4)
+ds = M.DeformingPlateData('./data/deforming_plate_np/train/')
 
+dl = torch.utils.data.DataLoader(
+    ds,
+    shuffle=True,
+    batch_size=batch_size,
+    num_workers=8,
+    pin_memory=dev.type == 'cuda',
+    pin_memory_device=str(dev),
+    collate_fn=M.collate_fn)
 
 if warmup:
-    ds = M.DeformingPlateData('./data/cylinder_flow_np/train/t0.npz')
-    dl = torch.utils.data.DataLoader(
-        ds,
-        shuffle=True,
-        batch_size=8,
-        num_workers=8,
-        pin_memory=dev.type == 'cuda',
-        pin_memory_device=str(dev),
-        collate_fn=M.collate_fn)
-
     for i, batch in enumerate(dl):
-        print(f'Warming normalizers ({i}/{len(ds)})...')
+        print(f'Warming normalizers ({i * batch_size}/{warmup_samples})...')
         net.loss(
-            batch['node_type'].to(dev),
-            batch['velocity'].to(dev),
-            batch['mesh_pos'].to(dev),
-            batch['srcs'].to(dev),
-            batch['dsts'].to(dev),
-            batch['target_velocity'].to(dev)
+            node_type=batch['node_type'].to(dev),
+            mesh_pos=batch['mesh_pos'].to(dev),
+            world_pos=batch['world_pos'].to(dev),
+            target_world_pos=batch['target_world_pos'].to(dev),
+            srcs=batch['srcs'].to(dev),
+            dsts=batch['dsts'].to(dev),
+            wsrcs=batch['wsrcs'].to(dev),
+            wdsts=batch['wdsts'].to(dev),
         )
 
+        if i * batch_size > warmup_samples: break
 
-def train_on_data(ds):
-    dl = torch.utils.data.DataLoader(
-        ds,
-        shuffle=True,
-        batch_size=8,
-        num_workers=8,
-        pin_memory=dev.type == 'cuda',
-        pin_memory_device=str(dev),
-        collate_fn=M.collate_fn)
 
-    ni = 0
-
-    try:
-        for i, batch in enumerate(dl):
-            loss = net.loss(
-                batch['node_type'].to(dev),
-                batch['velocity'].to(dev),
-                batch['mesh_pos'].to(dev),
-                batch['srcs'].to(dev),
-                batch['dests'].to(dev),
-                batch['target_velocity'].to(dev)
-            )
-
-            loss.backward()
-            opt.step()
-            opt.zero_grad()
-
-            print(i, loss.item())
-
-            ni += 1
-
-    except KeyboardInterrupt:
-        return ni, True
-
-    return ni, False
-
-t0 = time.perf_counter()
 total_iters = 0
 should_break = False
+t0 = time.perf_counter()
 
-while True:
-    for ti in range(1000):
-        filename = f'./data/cylinder_flow_np/train/t{ti}.npz'
-        print(f'Training on {filename}...')
-        ds = M.DeformingPlateData(filename)
-        num_iters, should_break = train_on_data(ds)
-        total_iters += num_iters
+try:
+    while True:
+        for i, batch in enumerate(dl):
+            with torch.amp.autocast('cuda'):
+                opt.zero_grad()
+                loss = net.loss(
+                    node_type=batch['node_type'].to(dev),
+                    mesh_pos=batch['mesh_pos'].to(dev),
+                    world_pos=batch['world_pos'].to(dev),
+                    target_world_pos=batch['target_world_pos'].to(dev),
+                    srcs=batch['srcs'].to(dev),
+                    dsts=batch['dsts'].to(dev),
+                    wsrcs=batch['wsrcs'].to(dev),
+                    wdsts=batch['wdsts'].to(dev),
+                )
+                loss.backward()
+                opt.step()
 
-        if should_break: break
-    if should_break: break
+                print(i, loss.item())
+                total_iters += 1
 
-t1 = time.perf_counter()
-print(f'Throughput: {total_iters / (t1 - t0):.2f} step/s')
-print('Saving checkpoint...')
-torch.save(net.state_dict(), checkpoint_file)
+finally:
+    t1 = time.perf_counter()
+    print(f'Training Speed: {total_iters / (t1 - t0):.2f} step/s')
+    print(f'Throughput: {batch_size * total_iters / (t1 - t0):.2f} samp/s')
+    print('Saving checkpoint...')
+    torch.save(net.state_dict(), checkpoint_file)
+
