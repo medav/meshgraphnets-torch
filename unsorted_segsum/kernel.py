@@ -64,9 +64,9 @@ class UnsortedSegmentSum(torch.autograd.Function):
         assert M is not None, f'No backend for {grad.device}'
 
         if len(grad.shape) == 2:
-            return M.unsorted_segment_sum_bwd_fp32(grad, indices), None, None
+            return M.unsorted_segment_sum_bwd_fp32(grad.contiguous(), indices), None, None
         elif len(grad.shape) == 3:
-            return M.batched_unsorted_segment_sum_bwd_fp32(grad, indices), None, None
+            return M.batched_unsorted_segment_sum_bwd_fp32(grad.contiguous(), indices), None, None
         else:
             raise NotImplementedError()
 

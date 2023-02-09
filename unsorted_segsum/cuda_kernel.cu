@@ -77,7 +77,7 @@ __global__ void batched_unsorted_segment_sum_fwd_cuda_fp32_kernel_v3(
     int r = blockIdx.y;
     int n = indices[r];
     int o_offset = b * num_segments * dim + n * dim;
-    int i_offset = b * num_rows * dim    + r * dim;
+    int i_offset = b * num_rows * dim + r * dim;
 
     if (d >= dim) return;
 

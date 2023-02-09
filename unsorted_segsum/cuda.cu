@@ -5,15 +5,21 @@
 
 #define CLD(N, D) ((N + D - 1) / D)
 
+#define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
+
 at::Tensor unsorted_segment_sum_fwd_cuda_fp32(
     at::Tensor data,
     at::Tensor indices,
     int num_segments
 ) {
+    CHECK_INPUT(data);
+    CHECK_INPUT(indices);
 
     const ssize_t R = data.size(0);
     const ssize_t D = data.size(1);
-    at::Tensor out = at::zeros({num_segments, data.size(1)}, data.options());
+    at::Tensor out = at::zeros({num_segments, D}, data.options());
 
     dim3 blocks(num_segments);
     dim3 threads(D);
@@ -35,6 +41,8 @@ at::Tensor unsorted_segment_sum_fwd_cuda_fp32_v2(
     at::Tensor indices,
     int num_segments
 ) {
+    CHECK_INPUT(data);
+    CHECK_INPUT(indices);
 
     const ssize_t R = data.size(0);
     const ssize_t D = data.size(1);
@@ -58,14 +66,16 @@ at::Tensor unsorted_segment_sum_fwd_cuda_fp32_v2(
 }
 
 at::Tensor unsorted_segment_sum_fwd_cuda_fp32_v3(
-    at::Tensor data,
-    at::Tensor indices,
+    at::Tensor data, // [num_rows, dim]
+    at::Tensor indices, // [num_rows]
     int num_segments
 ) {
+    CHECK_INPUT(data);
+    CHECK_INPUT(indices);
 
     const ssize_t R = data.size(0);
     const ssize_t D = data.size(1);
-    at::Tensor out = at::zeros({num_segments, data.size(1)}, data.options());
+    at::Tensor out = at::zeros({num_segments, D}, data.options());
 
     const ssize_t tblocks = CLD(D, THREADS_PER_BLOCK);
 
@@ -89,6 +99,9 @@ at::Tensor batched_unsorted_segment_sum_fwd_cuda_fp32_v3(
     at::Tensor indices, // [num_rows]
     int num_segments
 ) {
+    CHECK_INPUT(data);
+    CHECK_INPUT(indices);
+
     const ssize_t N = num_segments;
     const ssize_t B = data.size(0);
     const ssize_t R = data.size(1);
@@ -117,6 +130,9 @@ at::Tensor unsorted_segment_sum_bwd_cuda_fp32(
     at::Tensor grad,
     at::Tensor indices
 ) {
+    CHECK_INPUT(grad);
+    CHECK_INPUT(indices);
+
     const ssize_t R = indices.size(0);
     const ssize_t D = grad.size(1);
     at::Tensor out = at::zeros({R, D}, grad.options());
@@ -139,6 +155,9 @@ at::Tensor batched_unsorted_segment_sum_bwd_cuda_fp32(
     at::Tensor grad, // [batch, num_segments, dim]
     at::Tensor indices // [num_rows]
 ) {
+    CHECK_INPUT(grad);
+    CHECK_INPUT(indices);
+
     const ssize_t N = grad.size(1);
     const ssize_t B = grad.size(0);
     const ssize_t R = indices.size(0);
