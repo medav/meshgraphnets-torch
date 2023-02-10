@@ -27,7 +27,7 @@ dl = torch.utils.data.DataLoader(
     ds,
     shuffle=True,
     batch_size=batch_size,
-    num_workers=8,
+    num_workers=16,
     pin_memory=dev.type == 'cuda',
     pin_memory_device=str(dev),
     collate_fn=M.collate_fn)
@@ -73,6 +73,8 @@ try:
 
                 print(i, loss.item())
                 total_iters += 1
+
+except KeyboardInterrupt: pass
 
 finally:
     t1 = time.perf_counter()
