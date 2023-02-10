@@ -190,10 +190,6 @@ class DeformingPlateModel(torch.nn.Module):
         mask = (node_type == NodeType.NORMAL) .squeeze()
         return residuals[mask].pow(2).mean()
 
-@functools.lru_cache(maxsize=2048)
-def load_npz_cached(fname):
-    return np.load(fname)
-
 class DeformingPlateData(torch.utils.data.Dataset):
     # Train set has avg 1276 nodes/samp
 
@@ -225,7 +221,7 @@ class DeformingPlateData(torch.utils.data.Dataset):
 
     def __getitem__(self, idx : int) -> dict:
         fname, sid = self.idx_to_file(idx)
-        data = load_npz_cached(os.path.join(self.path, fname))
+        data = np.load(os.path.join(self.path, fname))
 
         node_type = torch.LongTensor(data['node_type'][sid, ...]).squeeze()
         cells = torch.LongTensor(data['cells'][sid, ...])
