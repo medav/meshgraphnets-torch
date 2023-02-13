@@ -59,12 +59,28 @@ os.makedirs(out_dir, exist_ok=True)
 
 ds = load_dataset(dataset_name, split)
 
-for i, record in enumerate(ds):
-    print(f'==== Record {i} ====')
-    for k, v in record.items():
-        print(k, v.shape)
+first = True
 
-    np.savez_compressed(os.path.join(out_dir, f'ex{i}.npz'), **record)
+with open(os.path.join(out_dir, 'meta.json'), 'w') as meta_file:
+    print('{', file=meta_file)
+    print('    "files": {', file=meta_file)
+    for i, record in enumerate(ds):
+        print(f'==== Record {i} ====')
+        for k, v in record.items():
+            print(k, v.shape)
+
+        ns = record['cells'].shape[0]
+
+        if first: first = False
+        else: print(',', file=meta_file)
+
+        np.savez_compressed(os.path.join(out_dir, f'ex{i}.npz'), **record)
+        print(f'        "ex{i}.npz": {ns}', file=meta_file, end='')
+
+    print('', file=meta_file)
+    print('    }', file=meta_file)
+    print('}', file=meta_file)
+
 
 
 
