@@ -94,6 +94,35 @@ at::Tensor unsorted_segment_sum_fwd_cuda_fp32_v3(
     return out;
 }
 
+at::Tensor unsorted_segment_sum_fwd_cuda_half_v3(
+    at::Tensor data, // [num_rows, dim]
+    at::Tensor indices, // [num_rows]
+    int num_segments
+) {
+    CHECK_INPUT(data);
+    CHECK_INPUT(indices);
+
+    const ssize_t R = data.size(0);
+    const ssize_t D = data.size(1);
+    at::Tensor out = at::zeros({num_segments, D}, data.options());
+
+    const ssize_t tblocks = CLD(D, THREADS_PER_BLOCK);
+
+    dim3 blocks(R, tblocks);
+    dim3 threads(THREADS_PER_BLOCK);
+
+    unsorted_segment_sum_fwd_cuda_half_kernel_v3<<<blocks, threads>>>(
+        (__half *)data.data_ptr<at::Half>(),
+        indices.data_ptr<int64_t>(),
+        (__half *)out.data_ptr<at::Half>(),
+        (int)R,
+        (int)D,
+        (int)num_segments
+    );
+
+    return out;
+}
+
 at::Tensor batched_unsorted_segment_sum_fwd_cuda_fp32_v3(
     at::Tensor data, // [batch, num_rows, dim]
     at::Tensor indices, // [num_rows]
@@ -144,6 +173,31 @@ at::Tensor unsorted_segment_sum_bwd_cuda_fp32(
         grad.data_ptr<float>(),
         indices.data_ptr<int64_t>(),
         out.data_ptr<float>(),
+        (int)R,
+        (int)D
+    );
+
+    return out;
+}
+
+at::Tensor unsorted_segment_sum_bwd_cuda_half(
+    at::Tensor grad,
+    at::Tensor indices
+) {
+    CHECK_INPUT(grad);
+    CHECK_INPUT(indices);
+
+    const ssize_t R = indices.size(0);
+    const ssize_t D = grad.size(1);
+    at::Tensor out = at::zeros({R, D}, grad.options());
+
+    dim3 blocks(R);
+    dim3 threads(D);
+
+    unsorted_segment_sum_bwd_cuda_half_kernel<<<blocks, threads>>>(
+        (__half *)grad.data_ptr<at::Half>(),
+        indices.data_ptr<int64_t>(),
+        (__half *)out.data_ptr<at::Half>(),
         (int)R,
         (int)D
     );

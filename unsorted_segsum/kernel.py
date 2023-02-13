@@ -48,10 +48,15 @@ class UnsortedSegmentSum(torch.autograd.Function):
 
         assert M is not None, f'No backend for {data.device}'
 
-        if len(data.shape) == 2:
+        if len(data.shape) == 2 and data.dtype == torch.float32:
             return M.unsorted_segment_sum_fwd_fp32(data, indices, num_segments)
-        elif len(data.shape) == 3:
+        elif len(data.shape) == 3 and data.dtype == torch.float32:
             return M.batched_unsorted_segment_sum_fwd_fp32(data, indices, num_segments)
+
+        elif len(data.shape) == 2 and data.dtype == torch.float16:
+            return M.unsorted_segment_sum_fwd_half(data, indices, num_segments)
+        elif len(data.shape) == 3 and data.dtype == torch.float16:
+            return M.batched_unsorted_segment_sum_fwd_half(data, indices, num_segments)
         else:
             raise NotImplementedError()
 
@@ -63,10 +68,15 @@ class UnsortedSegmentSum(torch.autograd.Function):
 
         assert M is not None, f'No backend for {grad.device}'
 
-        if len(grad.shape) == 2:
+        if len(grad.shape) == 2 and grad.dtype == torch.float32:
             return M.unsorted_segment_sum_bwd_fp32(grad.contiguous(), indices), None, None
-        elif len(grad.shape) == 3:
+        elif len(grad.shape) == 3 and grad.dtype == torch.float32:
             return M.batched_unsorted_segment_sum_bwd_fp32(grad.contiguous(), indices), None, None
+
+        elif len(grad.shape) == 2 and grad.dtype == torch.float16:
+            return M.unsorted_segment_sum_bwd_half(grad.contiguous(), indices), None, None
+        elif len(grad.shape) == 3 and grad.dtype == torch.float16:
+            return M.batched_unsorted_segment_sum_bwd_half(grad.contiguous(), indices), None, None
         else:
             raise NotImplementedError()
 

@@ -1,5 +1,5 @@
 #include "cuda_kernel.h"
-
+#include <cuda_fp16.h>
 
 __global__ void unsorted_segment_sum_fwd_cuda_fp32_kernel(
     float * data,
@@ -63,6 +63,25 @@ __global__ void unsorted_segment_sum_fwd_cuda_fp32_kernel_v3(
     atomicAdd(&output[offset + d], data[ii * dim + d]);
 }
 
+__global__ void unsorted_segment_sum_fwd_cuda_half_kernel_v3(
+    __half * data,
+    int64_t * indices,
+    __half * output,
+    int num_rows,
+    int dim,
+    int num_segments
+) {
+    int d = blockIdx.y * THREADS_PER_BLOCK + threadIdx.x;
+    int ii = blockIdx.x;
+    int segment = indices[ii];
+    int offset = segment * dim;
+
+    if (d >= dim) return;
+
+    atomicAdd(&output[offset + d], data[ii * dim + d]);
+}
+
+
 
 __global__ void batched_unsorted_segment_sum_fwd_cuda_fp32_kernel_v3(
     float * data,
@@ -90,6 +109,20 @@ __global__ void unsorted_segment_sum_bwd_cuda_fp32_kernel(
     float * grad,
     int64_t * indices,
     float * output,
+    int num_rows,
+    int dim
+) {
+    int d = threadIdx.x;
+    int r = blockIdx.x;
+    int64_t n = indices[r];
+
+    output[r * dim + d] = grad[n * dim + d];
+}
+
+__global__ void unsorted_segment_sum_bwd_cuda_half_kernel(
+    __half * grad,
+    int64_t * indices,
+    __half * output,
     int num_rows,
     int dim
 ) {
