@@ -20,14 +20,13 @@ dl = torch.utils.data.DataLoader(
 batch = next(iter(dl))
 
 batch_np = {
+    'node_offs': batch['node_offs'].numpy(),
     'node_type': batch['node_type'].numpy(),
     'mesh_pos': batch['mesh_pos'].numpy(),
     'world_pos': batch['world_pos'].numpy(),
     'target_world_pos': batch['target_world_pos'].numpy(),
     'srcs': batch['srcs'].numpy(),
-    'dsts': batch['dsts'].numpy(),
-    'wsrcs': batch['wsrcs'].numpy(),
-    'wdsts': batch['wdsts'].numpy(),
+    'dsts': batch['dsts'].numpy()
 }
 
-np.savez_compressed(f'b{BATCH_SIZE}.npz', **batch_np)
+np.savez_compressed(f'data/b{BATCH_SIZE}.npz', **batch_np)

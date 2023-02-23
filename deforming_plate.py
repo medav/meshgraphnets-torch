@@ -26,10 +26,10 @@ class NodeType(enum.IntEnum):
     SIZE = 9
 
 
-def arange2d(m, n):
+def arange2d(m, n, dev):
     return torch.stack([
-        torch.arange(m).reshape(-1, 1).repeat(1, n),
-        torch.arange(n).reshape(1, -1).repeat(m, 1)
+        torch.arange(m, device=dev).reshape(-1, 1).repeat(1, n),
+        torch.arange(n, device=dev).reshape(1, -1).repeat(m, 1)
     ], dim=2)
 
 def squared_dist(A : torch.Tensor, B : torch.Tensor):
@@ -38,31 +38,49 @@ def squared_dist(A : torch.Tensor, B : torch.Tensor):
     return row_norms_A - 2 * (A @ B.t()) + row_norms_B
 
 def construct_world_edges(
+    node_offs : torch.LongTensor,
     world_pos : torch.Tensor,
     node_type : torch.Tensor,
     thresh : float = 0.03
 ) -> torch.Tensor:
+    dev = world_pos.device
 
-    deformable = node_type != NodeType.OBSTACLE
-    deformable_idx = torch.arange(node_type.shape[0])[deformable]
+    srcss = []
+    dstss = []
 
-    actuator = node_type == NodeType.OBSTACLE
-    actuator_idx = torch.arange(node_type.shape[0])[actuator]
+    for bi in range(len(node_offs)):
+        off = node_offs[bi]
+        nn = (node_offs[bi + 1] if bi < len(node_offs) - 1 else world_pos.shape[0]) - off
 
-    actuator_pos = world_pos[actuator].to(torch.float64) # M, D
-    deformable_pos = world_pos[deformable].to(torch.float64) # N, D
+        b_node_type = node_type[off:off + nn]
+        b_world_pos = world_pos[off:off + nn, :]
 
-    dists = squared_dist(actuator_pos, deformable_pos) # M, N
-    M, N = dists.shape
+        # print(f'Batch {bi} ({off}-{off + nn}): {b_node_type.shape} {b_world_pos.shape}')
 
-    idxs = arange2d(M, N)
-    rel_close_pair_idx = idxs[dists < (thresh ** 2)]
+        deformable = b_node_type != NodeType.OBSTACLE
+        deformable_idx = torch.arange(b_node_type.shape[0], device=dev)[deformable]
 
-    srcs = actuator_idx[rel_close_pair_idx[:, 0]]
-    dsts = deformable_idx[rel_close_pair_idx[:, 1]]
+        actuator = b_node_type == NodeType.OBSTACLE
+        actuator_idx = torch.arange(b_node_type.shape[0], device=dev)[actuator]
 
-    return torch.cat([srcs, dsts], dim=0), torch.cat([dsts, srcs], dim=0)
+        b_actuator_pos = b_world_pos[actuator].to(torch.float64) # M, D
+        b_deformable_pos = b_world_pos[deformable].to(torch.float64) # N, D
 
+        b_dists = squared_dist(b_actuator_pos, b_deformable_pos) # M, N
+        M, N = b_dists.shape
+
+        idxs = arange2d(M, N, dev)
+        rel_close_pair_idx = idxs[b_dists < (thresh ** 2)]
+
+        srcs = actuator_idx[rel_close_pair_idx[:, 0]] + off
+        dsts = deformable_idx[rel_close_pair_idx[:, 1]] + off
+
+        srcss.append(srcs)
+        srcss.append(dsts)
+        dstss.append(dsts)
+        dstss.append(srcs)
+
+    return torch.cat(srcss, dim=0), torch.cat(dstss, dim=0)
 
 class DeformingPlateModel(torch.nn.Module):
     def __init__(
@@ -93,14 +111,13 @@ class DeformingPlateModel(torch.nn.Module):
 
     def forward(
         self,
+        node_offs : torch.LongTensor,
         node_type : torch.LongTensor,
         mesh_pos : torch.Tensor,
         world_pos : torch.Tensor,
         known_vel : torch.Tensor,
         srcs : torch.LongTensor,
         dsts : torch.LongTensor,
-        wsrcs : torch.LongTensor,
-        wdsts : torch.LongTensor,
         unnorm : bool = True
     ) -> torch.Tensor:
         """Predicts Velocity"""
@@ -134,6 +151,7 @@ class DeformingPlateModel(torch.nn.Module):
         # World Edge Features
         #
 
+        wsrcs, wdsts = construct_world_edges(node_offs, world_pos, node_type)
         rel_world_pos = world_pos[wsrcs, :] - world_pos[wdsts, :]
 
         world_edge_features = torch.cat([
@@ -157,28 +175,26 @@ class DeformingPlateModel(torch.nn.Module):
 
     def loss(
         self,
+        node_offs : torch.LongTensor,
         node_type : torch.LongTensor,
         mesh_pos : torch.Tensor,
         world_pos : torch.Tensor,
         target_world_pos : torch.Tensor,
         srcs : torch.LongTensor,
         dsts : torch.LongTensor,
-        wsrcs : torch.LongTensor,
-        wdsts : torch.LongTensor
     ) -> torch.Tensor:
 
         known_vel = target_world_pos - world_pos
         known_vel[node_type != NodeType.NORMAL, :] = 0.0
 
         pred = self.forward(
+            node_offs,
             node_type,
             mesh_pos,
             world_pos,
             known_vel,
             srcs,
             dsts,
-            wsrcs,
-            wdsts,
             unnorm=False
         )
 
@@ -223,11 +239,9 @@ class DeformingPlateData(torch.utils.data.Dataset):
         fname, sid = self.idx_to_file(idx)
         data = np.load(os.path.join(self.path, fname))
 
-        node_type = torch.LongTensor(data['node_type'][sid, ...]).squeeze()
         cells = torch.LongTensor(data['cells'][sid, ...])
         srcs, dsts = GNN.cells_to_edges(cells)
         world_pos = torch.Tensor(data['world_pos'][sid, ...])
-        wsrcs, wdsts = construct_world_edges(world_pos, node_type)
 
         return dict(
             node_offs=torch.LongTensor([0]),
@@ -236,8 +250,7 @@ class DeformingPlateData(torch.utils.data.Dataset):
             world_pos=world_pos,
             target_world_pos=torch.Tensor(data['world_pos'][sid + 1, ...]),
             stress=torch.Tensor(data['stress'][sid, ...]),
-            srcs=srcs, dsts=dsts,
-            wsrcs=wsrcs, wdsts=wdsts
+            srcs=srcs, dsts=dsts
         )
 
 
@@ -250,14 +263,9 @@ def collate_fn(batch):
     srcss = []
     dstss = []
 
-    wsrcss = []
-    wdstss = []
-
     for i in range(len(batch)):
         srcss.append(batch[i]['srcs'] + node_offs[i])
         dstss.append(batch[i]['dsts'] + node_offs[i])
-        wsrcss.append(batch[i]['wsrcs'] + node_offs[i])
-        wdstss.append(batch[i]['wdsts'] + node_offs[i])
 
     return dict(
         node_offs=node_offs,
@@ -267,9 +275,7 @@ def collate_fn(batch):
         target_world_pos=torch.cat([b['target_world_pos'] for b in batch], dim=0),
         stress=torch.cat([b['stress'] for b in batch], dim=0),
         srcs=torch.cat(srcss, dim=0),
-        dsts=torch.cat(dstss, dim=0),
-        wsrcs=torch.cat(wsrcss, dim=0),
-        wdsts=torch.cat(wdstss, dim=0)
+        dsts=torch.cat(dstss, dim=0)
     )
 
 
@@ -305,9 +311,7 @@ if __name__ == '__main__':
                     batch['world_pos'].to(dev),
                     batch['target_world_pos'].to(dev),
                     batch['srcs'].to(dev),
-                    batch['dsts'].to(dev),
-                    batch['wsrcs'].to(dev),
-                    batch['wdsts'].to(dev),
+                    batch['dsts'].to(dev)
                 ) #.backward()
             t1 = time.perf_counter()
 
