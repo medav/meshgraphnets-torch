@@ -4,17 +4,21 @@ sys.path.append('.')
 import time
 import pypin
 import torch
+from torch.profiler import profile, record_function, ProfilerActivity
 import graphnet as GNN
 
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
+NUM_ITERS = 10
+BATCH_SIZE = 32
+
+D = 128
+
 
 class PsuedoGraphNetBlock(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.node_mlp = GNN.Mlp(384, [128, 128, 128])
-        self.edge_mlp = GNN.Mlp(384, [128, 128, 128])
-        self.world_mlp = GNN.Mlp(384, [128, 128, 128])
+        self.node_mlp  = GNN.Mlp(3 * D, [D, D, D])
+        self.edge_mlp  = GNN.Mlp(3 * D, [D, D, D])
+        self.world_mlp = GNN.Mlp(3 * D, [D, D, D])
 
     def forward(self, n, e, w):
         n = self.node_mlp(torch.cat([n, n, n], dim=1))
@@ -35,10 +39,30 @@ class PsuedoGraphNet(torch.nn.Module):
         return n, e, w
 
 
-net = PsuedoGraphNet()
-n = torch.randn(840, 128)
-e = torch.randn(8210, 128)
-w = torch.randn(1914, 128)
+dev = torch.device('cuda:0')
+net = PsuedoGraphNet().half().to(dev)
+n = torch.randn(BATCH_SIZE * 1226,  D, device=dev, dtype=torch.float16)
+e = torch.randn(BATCH_SIZE * 12281, D, device=dev, dtype=torch.float16)
+w = torch.randn(BATCH_SIZE * 1660,  D, device=dev, dtype=torch.float16)
 
-with pypin.pinhooks.perf_roi(0, 'mlp', ''):
-    n, e, w = net(n, e, w)
+# with pypin.pinhooks.perf_roi(0, 'mlp', ''):
+
+with profile(
+    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    with_stack=True,
+    profile_memory=True,
+) as prof:
+    t0 = time.perf_counter()
+    for i in range(NUM_ITERS):
+        net(n, e, w)
+        prof.step()
+    t1 = time.perf_counter()
+
+print(f'Batch Size: {BATCH_SIZE}')
+print(f'Num Iters: {NUM_ITERS}')
+print(f'Elapsed time: {t1 - t0:.2f} seconds')
+print(f'Throughput: {NUM_ITERS * BATCH_SIZE / (t1 - t0):.2f} samp/sec')
+
+# print(prof \
+#     .key_averages(group_by_input_shape=False, group_by_stack_n=4) \
+#     .table(sort_by="self_cuda_time_total", row_limit=-1, top_level_events_only=False))
