@@ -12,7 +12,7 @@ cpu_unsorted_segsum = load('cpu_unsorted_segsum',
     [f'{cur_path}/cpu_extension.cc', f'{cur_path}/cpu.cc'],
     extra_cflags=['-fopenmp', '-O3', '-march=native'],
     extra_ldflags=['-lgomp', '-O3', '-march=native'],
-    verbose=True)
+    verbose=False)
 
 import cpu_unsorted_segsum
 
@@ -21,7 +21,7 @@ if torch.cuda.is_available():
         [f'{cur_path}/cuda_extension.cc', f'{cur_path}/cuda.cu', f'{cur_path}/cuda_kernel.cu'],
         extra_cflags=['-fopenmp', '-O3', '-march=native'],
         extra_ldflags=['-lgomp', '-O3', '-march=native'],
-        verbose=True)
+        verbose=False)
 
     import cuda_unsorted_segsum
 
