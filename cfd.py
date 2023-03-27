@@ -1,5 +1,7 @@
 import enum
 import torch
+import json
+import os
 import numpy as np
 import graphnet as GNN
 
@@ -103,36 +105,49 @@ class CfdModel(torch.nn.Module):
 
         return residuals[mask].pow(2).mean()
 
-
 class CylinderFlowData(torch.utils.data.Dataset):
-    def __init__(self, filename):
-        self.filename = filename
+    def __init__(self, path):
+        self.path = path
+        self.meta = json.loads(open(os.path.join(path, 'meta.json')).read())
+        self.files = self.meta['files']
+        self.num_samples = sum(self.files[f] - 1 for f in self.files)
 
-        data = np.load(self.filename)
-        self.num_samples = len(data['cells']) - 1
+    @property
+    def avg_nodes_per_sample(self):
+        total_nodes = 0
+        total_samples = 0
+        for fname, num_steps in self.files.items():
+            data = np.load(os.path.join(self.path, fname))
+            total_nodes += data['mesh_pos'].shape[1] * (num_steps - 1)
+            total_samples += num_steps - 1
 
-        self.cells = torch.LongTensor(data['cells'][0, ...])
-        self.node_type = torch.LongTensor(data['node_type'][0, ...])
-        self.srcs, self.dsts = GNN.cells_to_edges(self.cells)
-        self.mesh_pos = data['mesh_pos'].copy()
-        self.pressure = data['pressure'].copy()
-        self.velocity = data['velocity'].copy()
+        return total_nodes / total_samples
+
+
+    def idx_to_file(self, sample_id):
+        for fname, num_steps in self.files.items():
+            if sample_id < (num_steps - 1): return fname, sample_id
+            else: sample_id -= (num_steps - 1)
+        raise IndexError()
 
     def __len__(self): return self.num_samples
 
     def __getitem__(self, idx : int) -> dict:
-        assert idx < self.num_samples
+        fname, sid = self.idx_to_file(idx)
+        data = np.load(os.path.join(self.path, fname))
 
-        with torch.no_grad():
-            return dict(
-                mesh_pos=torch.Tensor(self.mesh_pos[idx, ...]),
-                node_type=self.node_type,
-                pressure=torch.Tensor(self.pressure[idx, ...]),
-                velocity=torch.Tensor(self.velocity[idx, ...]),
-                target_velocity=torch.Tensor(self.velocity[idx + 1, ...]),
-                srcs=self.srcs,
-                dsts=self.dsts
-            )
+        cells = torch.LongTensor(data['cells'][sid, ...])
+        srcs, dsts = GNN.cells_to_edges(cells)
+        velocity = torch.Tensor(data['velocity'][sid, ...])
+
+        return dict(
+            node_type=torch.LongTensor(data['node_type'][sid, ...]).squeeze(),
+            mesh_pos=torch.Tensor(data['mesh_pos'][sid, ...]),
+            velocity=velocity,
+            target_velocity=torch.Tensor(data['velocity'][sid + 1, ...]),
+            pressure=torch.Tensor(data['pressure'][sid, ...]),
+            srcs=srcs, dsts=dsts
+        )
 
 
 def collate_fn(batch):
@@ -149,11 +164,11 @@ def collate_fn(batch):
         dstss.append(batch[i]['dsts'] + node_offs[i])
 
     return dict(
-        mesh_pos=torch.cat([b['mesh_pos'] for b in batch], dim=0),
         node_type=torch.cat([b['node_type'] for b in batch], dim=0),
-        pressure=torch.cat([b['pressure'] for b in batch], dim=0),
+        mesh_pos=torch.cat([b['mesh_pos'] for b in batch], dim=0),
         velocity=torch.cat([b['velocity'] for b in batch], dim=0),
         target_velocity=torch.cat([b['target_velocity'] for b in batch], dim=0),
+        pressure=torch.cat([b['pressure'] for b in batch], dim=0),
         srcs=torch.cat(srcss, dim=0),
         dsts=torch.cat(dstss, dim=0),
     )
