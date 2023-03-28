@@ -141,6 +141,7 @@ class CylinderFlowData(torch.utils.data.Dataset):
         velocity = torch.Tensor(data['velocity'][sid, ...])
 
         return dict(
+            node_offs=torch.LongTensor([0]),
             node_type=torch.LongTensor(data['node_type'][sid, ...]).squeeze(),
             mesh_pos=torch.Tensor(data['mesh_pos'][sid, ...]),
             velocity=velocity,
