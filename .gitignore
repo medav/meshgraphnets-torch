@@ -4,3 +4,5 @@ ckpt
 __pycache__
 *.pyc
 .vscode
+*.sqlite
+*.nsys-rep
