@@ -24,9 +24,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-.PHONY: default
+.PHONY: default run objdump
 
-default: tc_example
+default: run
 
 
 tc_example: tc_example.cu
@@ -35,3 +35,8 @@ tc_example: tc_example.cu
 clean:
 	rm -f tc_example
 
+run: tc_example
+	./tc_example
+
+objdump: tc_example
+	/usr/local/cuda/bin/cuobjdump --dump-ptx tc_example

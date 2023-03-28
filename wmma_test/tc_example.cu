@@ -66,6 +66,7 @@ using namespace nvcuda;
 #define V2_NBLK 16
 
 #define NUM_ITERS 1000
+#define WARP_SIZE 32
 
 // The only dimensions currently supported by WMMA
 const int WMMA_M = 16;
@@ -73,24 +74,119 @@ const int WMMA_N = 16;
 const int WMMA_K = 16;
 
 template<typename A_LAYOUT, typename B_LAYOUT>
-__global__ void throughput_test(uint64_t num_iters, void * buf)
+__global__ void throughput_test_reg_reg_layout(uint64_t num_iters, void * buf)
 {
 
     wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, A_LAYOUT> a_frag;
     wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, B_LAYOUT> b_frag;
-    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> c_frag;
-    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> d_frag;
+    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> c_frag;\
 
-    wmma::fill_fragment(c_frag, 0.0f);
-    wmma::fill_fragment(d_frag, 0.0f);
+    wmma::fill_fragment(c_frag, 0.0f);\
     wmma::fill_fragment(a_frag, 1.0f);
     wmma::fill_fragment(b_frag, 1.0f);
 
     for (int ni = 0; ni < num_iters; ni++) {
-        wmma::mma_sync(c_frag, a_frag, b_frag, d_frag);
+        wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
     }
 
     wmma::store_matrix_sync((half *)buf, c_frag, WMMA_N, wmma::mem_row_major);
+}
+
+template<ssize_t NWARP>
+__global__ void throughput_test_reg_reg(uint64_t num_iters, void * buf)
+{
+    int warp_id = threadIdx.x / warpSize;
+
+    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> a_frag;
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> b_frag;
+    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> c_frag;
+
+    wmma::fill_fragment(c_frag, 0.0f);
+    wmma::fill_fragment(a_frag, 1.0f);
+
+    for (int ni = 0; ni < num_iters; ni++) {
+        wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+    }
+
+    wmma::store_matrix_sync((half *)buf, c_frag, WMMA_N, wmma::mem_row_major);
+}
+
+template<ssize_t NWARP>
+__global__ void throughput_test_smem_smem(uint64_t num_iters, void * buf)
+{
+    __shared__ half sbuf_a[NWARP][WMMA_M][WMMA_K];
+    __shared__ half sbuf_b[NWARP][WMMA_K][WMMA_N];
+
+    int warp_id = threadIdx.x / warpSize;
+
+    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> a_frag;
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> b_frag;
+    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> c_frag;
+
+    wmma::fill_fragment(c_frag, 0.0f);
+
+    for (int ni = 0; ni < num_iters; ni++) {
+        wmma::load_matrix_sync(a_frag, (half *)&sbuf_a[warp_id][0][0], WMMA_K);
+        wmma::load_matrix_sync(b_frag, (half *)&sbuf_b[warp_id][0][0], WMMA_N);
+        wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+    }
+
+    wmma::store_matrix_sync((half *)buf, c_frag, WMMA_N, wmma::mem_row_major);
+}
+
+template<ssize_t NWARP>
+__global__ void throughput_test_reg_smem(uint64_t num_iters, void * buf)
+{
+
+    __shared__ half sbuf_b[NWARP][WMMA_K][WMMA_N];
+
+
+    int warp_id = threadIdx.x / warpSize;
+
+    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> a_frag;
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> b_frag;
+    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> c_frag;
+
+    wmma::fill_fragment(c_frag, 0.0f);
+    wmma::fill_fragment(a_frag, 1.0f);
+
+    for (int ni = 0; ni < num_iters; ni++) {
+        wmma::load_matrix_sync(b_frag, (half *)&sbuf_b[warp_id][0][0], WMMA_N);
+        wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+    }
+
+    wmma::store_matrix_sync((half *)buf, c_frag, WMMA_N, wmma::mem_row_major);
+}
+
+
+template<ssize_t NWARP>
+__global__ void throughput_test_reg_smem_gmem(uint64_t num_iters, void * buf)
+{
+
+    __shared__ half sbuf_b[NWARP][WMMA_K][WMMA_N];
+
+
+    int warp_id = threadIdx.x / warpSize;
+
+    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> a_frag1;
+    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> a_frag2;
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> b_frag;
+    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> c_frag1;
+    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> c_frag2;
+
+    wmma::fill_fragment(c_frag1, 0.0f);
+    wmma::fill_fragment(a_frag1, 1.0f);
+    wmma::fill_fragment(c_frag2, 0.0f);
+    wmma::fill_fragment(a_frag2, 1.0f);
+
+    for (int ni = 0; ni < num_iters; ni++) {
+        wmma::load_matrix_sync(b_frag, (half *)&sbuf_b[warp_id][0][0], WMMA_N);
+        wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
+        wmma::mma_sync(c_frag2, a_frag2, b_frag, c_frag2);
+        wmma::store_matrix_sync((half *)buf, c_frag1, WMMA_N, wmma::mem_row_major);
+        wmma::store_matrix_sync((half *)buf, c_frag2, WMMA_N, wmma::mem_row_major);
+    }
+
 }
 
 template<ssize_t M, ssize_t N, ssize_t K>
@@ -219,29 +315,96 @@ const char * name_of<wmma::row_major>() { return "ROW"; }
 template<>
 const char * name_of<wmma::col_major>() { return "COL"; }
 
-template<typename A_LAYOUT, typename B_LAYOUT>
-void host_throughput_test() {
+void host_throughput_test(std::string name, float flops, std::function<void(int, void*)> func) {
     constexpr int num_iters = 1000000;
 
     float * buf;
     cudaErrCheck(cudaMalloc(&buf, WMMA_M * WMMA_N * sizeof(float)));
 
     float wmma_ms = cuda_time_kernel_ms(
-        [=]() { throughput_test<A_LAYOUT, B_LAYOUT><<<1, 32>>>(num_iters, buf); });
+        [=]() { func(num_iters, buf); });
 
-    float flops = (float)WMMA_M * WMMA_N * WMMA_K * 2 * num_iters;
-    float gflop_s = (flops / 1.0e9) / (wmma_ms / 1.0e3);
+    float gflop_s = (flops * num_iters / 1.0e9) / (wmma_ms / 1.0e3);
 
     cudaErrCheck(cudaFree(buf));
 
-    printf("(%s, %s): %.3f GFLOP/s\n", name_of<A_LAYOUT>(), name_of<B_LAYOUT>(), gflop_s);
+    printf("%s: %.3f GFLOP/s\n", name.c_str(), gflop_s);
+}
+
+template<typename A_LAYOUT, typename B_LAYOUT>
+void host_throughput_test_reg_reg_layout() {
+    float flops_16_16_16 = (float)WMMA_M * WMMA_N * WMMA_K * 2;
+    host_throughput_test(
+        std::string(name_of<A_LAYOUT>()) + "_" + name_of<B_LAYOUT>(),
+        flops_16_16_16,
+        [=](int num_iters, void* buf) {
+            throughput_test_reg_reg_layout<A_LAYOUT, B_LAYOUT><<<1, 32>>>(num_iters, buf);
+        });
 }
 
 void host_throughput_test_all() {
-    host_throughput_test<wmma::row_major, wmma::row_major>();
-    host_throughput_test<wmma::row_major, wmma::col_major>();
-    host_throughput_test<wmma::col_major, wmma::row_major>();
-    host_throughput_test<wmma::col_major, wmma::col_major>();
+    host_throughput_test_reg_reg_layout<wmma::row_major, wmma::row_major>();
+    host_throughput_test_reg_reg_layout<wmma::row_major, wmma::col_major>();
+    host_throughput_test_reg_reg_layout<wmma::col_major, wmma::row_major>();
+    host_throughput_test_reg_reg_layout<wmma::col_major, wmma::col_major>();
+
+    host_throughput_test(
+        std::string("reg_reg_1"),
+        (float)WMMA_M * WMMA_N * WMMA_K * 2,
+        [=](int num_iters, void* buf) {
+            throughput_test_reg_reg<1><<<1, WARP_SIZE>>>(num_iters, buf);
+        });
+
+    host_throughput_test(
+        std::string("reg_reg_32"),
+        (float)WMMA_M * WMMA_N * WMMA_K * 2 * 32,
+        [=](int num_iters, void* buf) {
+            throughput_test_reg_reg<32><<<1, WARP_SIZE * 32>>>(num_iters, buf);
+        });
+
+    host_throughput_test(
+        std::string("reg_smem_1"),
+        (float)WMMA_M * WMMA_N * WMMA_K * 2,
+        [=](int num_iters, void* buf) {
+            throughput_test_reg_smem<1><<<1, WARP_SIZE>>>(num_iters, buf);
+        });
+
+    host_throughput_test(
+        std::string("reg_smem_32"),
+        (float)WMMA_M * WMMA_N * WMMA_K * 2 * 32,
+        [=](int num_iters, void* buf) {
+            throughput_test_reg_smem<32><<<1, WARP_SIZE * 32>>>(num_iters, buf);
+        });
+
+
+    host_throughput_test(
+        std::string("reg_smem_gmem_1"),
+        (float)WMMA_M * WMMA_N * WMMA_K * 2 * 2,
+        [=](int num_iters, void* buf) {
+            throughput_test_reg_smem_gmem<1><<<1, WARP_SIZE>>>(num_iters, buf);
+        });
+
+    host_throughput_test(
+        std::string("reg_smem_gmem_32"),
+        (float)WMMA_M * WMMA_N * WMMA_K * 2 * 2 * 32,
+        [=](int num_iters, void* buf) {
+            throughput_test_reg_smem_gmem<32><<<1, WARP_SIZE * 32>>>(num_iters, buf);
+        });
+
+    host_throughput_test(
+        std::string("smem_smem_1"),
+        (float)WMMA_M * WMMA_N * WMMA_K * 2,
+        [=](int num_iters, void* buf) {
+            throughput_test_smem_smem<1><<<1, WARP_SIZE>>>(num_iters, buf);
+        });
+
+    host_throughput_test(
+        std::string("smem_smem_32"),
+        (float)WMMA_M * WMMA_N * WMMA_K * 2 * 32,
+        [=](int num_iters, void* buf) {
+            throughput_test_smem_smem<32><<<1, WARP_SIZE * 32>>>(num_iters, buf);
+        });
+
 
 }
 
