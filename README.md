@@ -25,7 +25,6 @@ processed from tfrecord into compressed Numpy format.
 | train_*.py | Runs training for the models (**These are stale! May not work!**) |
 | test/* | Collection of small scale test scripts (**Many are stale; use with caution**) |
 | unsorted_segsum/* | Manual implementation of TensorFlow's UnsortedSegmentSum for CUDA |
-| wmma_* | Small TensorCore example programs (**To be removed**) |
 | scripts/* | Scripts to download and preprocess tfrecord datasets |
 | cudaprofile.py | Python hooks to call cudaProfilerStart/Stop |
 | run_ncu/nsys.sh | Scripts to run nvidia tools on these models |
