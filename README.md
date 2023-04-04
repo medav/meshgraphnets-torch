@@ -4,8 +4,8 @@ This repository is a PyTorch rewrite of [DeepMind's MeshGrapNets](https://github
 and is intended to be as faithful to the original as possible.
 
 **Disclaimer: This repo is under active development. There may be some staleness
-/ some small tweaks here or there may have broken some things. Please ping Mike
-with any questions**
+/ some small tweaks here or there may have broken some things. Please ping Mike (davies@cs.wisc.edu)
+with any questions.**
 
 ## Repo Overview
 The model is split between the common elements [graphnet.py](graphnet.py) and
@@ -19,7 +19,7 @@ processed from tfrecord into compressed Numpy format.
 |--------|-------|
 | graphnet.py | Core GNN model used by all applications of MGN |
 | cfd.py | Code for CFD model and dataset |
-| deforming_plate.pt | Code for Deforming Plate model and dataset |
+| deforming_plate.py | Code for Deforming Plate model and dataset |
 | create_infer_data.py | Generates pre-processed inference data for deforming plate (for perf benchmarks) |
 | infer_dp.py | Runs inference for deforming plate model on pre-processed data and reports performance |
 | train_*.py | Runs training for the models (**These are stale! May not work!**) |
@@ -28,7 +28,7 @@ processed from tfrecord into compressed Numpy format.
 | wmma_* | Small TensorCore example programs (**To be removed**) |
 | scripts/* | Scripts to download and preprocess tfrecord datasets |
 | cudaprofile.py | Python hooks to call cudaProfilerStart/Stop |
-| run_ncu/nsys.sh | Scripts to run nvidia tools on these scripts |
+| run_ncu/nsys.sh | Scripts to run nvidia tools on these models |
 
 ## Suggested First Steps
 ```bash
