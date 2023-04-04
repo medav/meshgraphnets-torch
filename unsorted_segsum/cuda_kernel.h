@@ -9,8 +9,6 @@ __global__ void unsorted_segment_sum_fwd_cuda_fp32_kernel(
     int num_segments
 );
 
-#define THREADS_PER_BLOCK 32
-
 __global__ void unsorted_segment_sum_fwd_cuda_fp32_kernel_v2(
     float * data,
     int64_t * indices,

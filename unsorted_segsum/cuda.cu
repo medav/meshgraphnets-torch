@@ -9,6 +9,9 @@
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
+
+#define THREADS_PER_BLOCK 128
+
 at::Tensor unsorted_segment_sum_fwd_cuda_fp32(
     at::Tensor data,
     at::Tensor indices,

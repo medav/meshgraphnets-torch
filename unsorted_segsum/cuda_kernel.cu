@@ -28,7 +28,7 @@ __global__ void unsorted_segment_sum_fwd_cuda_fp32_kernel_v2(
     int dim,
     int num_segments
 ) {
-    int d = blockIdx.y * THREADS_PER_BLOCK + threadIdx.x;
+    int d = blockIdx.y * blockDim.x + threadIdx.x;
     int segment = blockIdx.x;
     int offset = segment * dim;
 
@@ -53,7 +53,7 @@ __global__ void unsorted_segment_sum_fwd_cuda_fp32_kernel_v3(
     int dim,
     int num_segments
 ) {
-    int d = blockIdx.y * THREADS_PER_BLOCK + threadIdx.x;
+    int d = blockIdx.y * blockDim.x + threadIdx.x;
     int ii = blockIdx.x;
     int segment = indices[ii];
     int offset = segment * dim;
@@ -71,7 +71,7 @@ __global__ void unsorted_segment_sum_fwd_cuda_half_kernel_v3(
     int dim,
     int num_segments
 ) {
-    int d = blockIdx.y * THREADS_PER_BLOCK + threadIdx.x;
+    int d = blockIdx.y * blockDim.x + threadIdx.x;
     int ii = blockIdx.x;
     int segment = indices[ii];
     int offset = segment * dim;
@@ -91,7 +91,7 @@ __global__ void batched_unsorted_segment_sum_fwd_cuda_fp32_kernel_v3(
     int dim,
     int num_segments
 ) {
-    int d = blockIdx.z * THREADS_PER_BLOCK + threadIdx.x;
+    int d = blockIdx.z * blockDim.x + threadIdx.x;
     int b = blockIdx.x;
     int r = blockIdx.y;
     int n = indices[r];
