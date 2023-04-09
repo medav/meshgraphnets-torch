@@ -254,6 +254,9 @@ class DeformingPlateData(torch.utils.data.Dataset):
         )
 
 
+def make_dataset(path): return DeformingPlateData(path)
+
+
 def collate_fn(batch):
     node_offs = torch.LongTensor([
         0 if i == 0 else batch[i - 1]['node_type'].shape[0]
@@ -277,6 +280,32 @@ def collate_fn(batch):
         srcs=torch.cat(srcss, dim=0),
         dsts=torch.cat(dstss, dim=0)
     )
+
+def create_infer_data(bs : int, dataset_path : str, output_path : str):
+    ds = DeformingPlateData(dataset_path)
+
+    print('Setting up data loader...')
+    dl = torch.utils.data.DataLoader(
+        ds,
+        shuffle=False,
+        batch_size=bs,
+        num_workers=16,
+        collate_fn=collate_fn)
+
+    batch = next(iter(dl))
+
+    batch_np = {
+        'node_offs': batch['node_offs'].numpy(),
+        'node_type': batch['node_type'].numpy(),
+        'mesh_pos': batch['mesh_pos'].numpy(),
+        'world_pos': batch['world_pos'].numpy(),
+        'target_world_pos': batch['target_world_pos'].numpy(),
+        'srcs': batch['srcs'].numpy(),
+        'dsts': batch['dsts'].numpy()
+    }
+
+    np.savez_compressed(output_path, **batch_np)
+
 
 
 if __name__ == '__main__':

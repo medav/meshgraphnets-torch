@@ -44,7 +44,7 @@ class ClothModel(torch.nn.Module):
     def forward(
         self,
         node_type : torch.Tensor,
-        mesh_pos: torch.Tensor, 
+        mesh_pos: torch.Tensor,
         world_pos : torch.Tensor,
         prev_world_pos: torch.Tensor,
         srcs : torch.LongTensor,
@@ -83,17 +83,17 @@ class ClothModel(torch.nn.Module):
     def loss(
         self,
         node_type : torch.Tensor,
-        mesh_pos: torch.Tensor, 
+        mesh_pos: torch.Tensor,
         world_pos : torch.Tensor,
         prev_world_pos: torch.Tensor,
-        target_world_pos: torch.Tensor, 
+        target_world_pos: torch.Tensor,
         srcs : torch.LongTensor,
         dsts : torch.LongTensor,
     ) -> torch.Tensor:
 
         pred = self.forward(
             node_type,
-            mesh_pos, 
+            mesh_pos,
             world_pos,
             prev_world_pos,
             srcs,
@@ -156,6 +156,7 @@ class ClothData(torch.utils.data.Dataset):
             srcs=srcs, dsts=dsts
         )
 
+def make_dataset(path): return ClothData(path)
 
 def collate_fn(batch):
     node_offs = torch.LongTensor([
@@ -176,10 +177,38 @@ def collate_fn(batch):
         mesh_pos=torch.cat([b['mesh_pos'] for b in batch], dim=0),
         world_pos=torch.cat([b['world_pos'] for b in batch], dim=0),
         target_world_pos=torch.cat([b['target_world_pos'] for b in batch], dim=0),
-        prev_world_pos=torch.cat([b['prev_world_pos'] for b in batch], dim=0), 
+        prev_world_pos=torch.cat([b['prev_world_pos'] for b in batch], dim=0),
         srcs=torch.cat(srcss, dim=0),
         dsts=torch.cat(dstss, dim=0),
     )
+
+
+def create_infer_data(bs : int, dataset_path : str, output_path : str):
+    ds = ClothData(dataset_path)
+
+    print('Setting up data loader...')
+    dl = torch.utils.data.DataLoader(
+        ds,
+        shuffle=False,
+        batch_size=bs,
+        num_workers=16,
+        collate_fn=collate_fn)
+
+    batch = next(iter(dl))
+
+    batch_np = {
+        'node_offs': batch['node_offs'].numpy(),
+        'node_type': batch['node_type'].numpy(),
+        'mesh_pos': batch['mesh_pos'].numpy(),
+        'world_pos': batch['world_pos'].numpy(),
+        'prev_world_pos': batch['target_world_pos'].numpy(),
+        'target_world_pos': batch['target_world_pos'].numpy(),
+        'srcs': batch['srcs'].numpy(),
+        'dsts': batch['dsts'].numpy()
+    }
+
+    np.savez_compressed(output_path, **batch_np)
+
 
 if __name__ == '__main__':
     import time
