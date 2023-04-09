@@ -254,9 +254,6 @@ class DeformingPlateData(torch.utils.data.Dataset):
         )
 
 
-def make_dataset(path): return DeformingPlateData(path)
-
-
 def collate_fn(batch):
     node_offs = torch.LongTensor([
         0 if i == 0 else batch[i - 1]['node_type'].shape[0]
@@ -307,46 +304,20 @@ def create_infer_data(bs : int, dataset_path : str, output_path : str):
     np.savez_compressed(output_path, **batch_np)
 
 
+def make_model(): return DeformingPlateModel()
+def make_dataset(path): return DeformingPlateData(path)
 
-if __name__ == '__main__':
-    import time
+def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
+    np_data = np.load(path)
 
-    NI = 30
-    BS = 256
-    dev = torch.device('cuda:0')
-    net = DeformingPlateModel().to(dev)
+    return len(np_data['node_offs']), {
+        'node_offs': torch.LongTensor(np_data['node_offs']).to(dev),
+        'node_type': torch.LongTensor(np_data['node_type']).to(dev),
+        'mesh_pos': torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
+        'world_pos': torch.Tensor(np_data['world_pos']).to(dev).to(dtype),
+        'target_world_pos': torch.Tensor(np_data['target_world_pos']).to(dev).to(dtype),
+        'srcs': torch.LongTensor(np_data['srcs']).to(dev),
+        'dsts': torch.LongTensor(np_data['dsts']).to(dev)
+    }
 
-    ds = DeformingPlateData('./data/deforming_plate_np/train/ex0.npz')
-
-    dl = torch.utils.data.DataLoader(
-        ds,
-        shuffle=True,
-        batch_size=BS,
-        num_workers=1,
-        pin_memory=dev.type == 'cuda',
-        pin_memory_device=str(dev),
-        collate_fn=collate_fn)
-
-
-    batch = next(iter(dl))
-
-    with torch.no_grad():
-        with torch.amp.autocast('cuda'):
-            t0 = time.perf_counter()
-            for _ in range(NI):
-                net.loss(
-                    batch['node_type'].to(dev),
-                    batch['mesh_pos'].to(dev),
-                    batch['world_pos'].to(dev),
-                    batch['target_world_pos'].to(dev),
-                    batch['srcs'].to(dev),
-                    batch['dsts'].to(dev)
-                ) #.backward()
-            t1 = time.perf_counter()
-
-    print(f'Batch Size: {BS}')
-    print(f'Num Iters: {NI}')
-    print(f'Num Threads: {NI}')
-    print(f'Elapsed time: {t1 - t0:.2f} seconds')
-    print(f'Throughput: {NI * BS / (t1 - t0):.2f} samp/sec')
-
+def infer(net, batch): return net.loss(**batch)
