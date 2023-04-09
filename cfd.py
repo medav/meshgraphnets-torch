@@ -150,6 +150,7 @@ class CylinderFlowData(torch.utils.data.Dataset):
             srcs=srcs, dsts=dsts
         )
 
+def make_dataset(path): return CylinderFlowData(path)
 
 def collate_fn(batch):
     node_offs = torch.LongTensor([
@@ -173,6 +174,32 @@ def collate_fn(batch):
         srcs=torch.cat(srcss, dim=0),
         dsts=torch.cat(dstss, dim=0),
     )
+
+
+def create_infer_data(bs : int, dataset_path : str, output_path : str):
+    ds = CylinderFlowData(dataset_path)
+
+    print('Setting up data loader...')
+    dl = torch.utils.data.DataLoader(
+        ds,
+        shuffle=False,
+        batch_size=bs,
+        num_workers=4, # changed to 4 from 16
+        collate_fn=collate_fn)
+
+    batch = next(iter(dl))
+
+    batch_np = {
+        'node_type': batch['node_type'].numpy(),
+        'velocity': batch['velocity'].numpy(),
+        'mesh_pos': batch['mesh_pos'].numpy(),
+        'srcs': batch['srcs'].numpy(),
+        'dsts': batch['dsts'].numpy(),
+        'target_velocity': batch['target_velocity'].numpy()
+    }
+
+    np.savez_compressed(output_path, **batch_np)
+
 
 if __name__ == '__main__':
     import time
