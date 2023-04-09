@@ -9,7 +9,7 @@ sys.path.append('.')
 
 def usage():
     print('Usage: python infer_bench.py <model> <input_file> <num_iters>')
-    print('    (model: cfd, cloth, dp)')
+    print('    (model: cfd, cloth, deforming_plate)')
     exit(1)
 
 if __name__ == '__main__':
@@ -24,7 +24,7 @@ if __name__ == '__main__':
     dataset_name = {
         'cloth': 'cloth',
         'cfd': 'cylinder_flow',
-        'dp': 'deforming_plate'
+        'deforming_plate': 'deforming_plate'
     }[model]
 
     if model == 'cloth': import cloth as M

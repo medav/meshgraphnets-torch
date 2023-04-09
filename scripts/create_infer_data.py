@@ -12,9 +12,8 @@ if __name__ == '__main__':
     dataset_name = {
         'cloth': 'cloth',
         'cfd': 'cylinder_flow',
-        'dp': 'deforming_plate'
+        'deforming_plate': 'deforming_plate'
     }[model]
-
 
     if model == 'cloth': import cloth as M
     elif model == 'cfd': import cfd as M
