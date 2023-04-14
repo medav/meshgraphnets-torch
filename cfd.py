@@ -76,6 +76,7 @@ class CfdModel(torch.nn.Module):
 
     def loss(
         self,
+        node_offs : torch.Tensor,
         node_type : torch.Tensor,
         velocity : torch.Tensor,
         mesh_pos : torch.Tensor,
@@ -165,6 +166,7 @@ def collate_fn(batch):
         dstss.append(batch[i]['dsts'] + node_offs[i])
 
     return dict(
+        node_offs=node_offs,
         node_type=torch.cat([b['node_type'] for b in batch], dim=0),
         mesh_pos=torch.cat([b['mesh_pos'] for b in batch], dim=0),
         velocity=torch.cat([b['velocity'] for b in batch], dim=0),
@@ -189,6 +191,7 @@ def create_infer_data(bs : int, dataset_path : str, output_path : str):
     batch = next(iter(dl))
 
     batch_np = {
+        'node_offs': batch['node_offs'].numpy(),
         'node_type': batch['node_type'].numpy(),
         'velocity': batch['velocity'].numpy(),
         'mesh_pos': batch['mesh_pos'].numpy(),
@@ -207,6 +210,7 @@ def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
     np_data = np.load(path)
 
     return len(np_data['node_offs']), {
+        'node_offs': torch.LongTensor(np_data['node_offs']).to(dev),
         'node_type': torch.LongTensor(np_data['node_type']).to(dev),
         'velocity': torch.Tensor(np_data['velocity']).to(dev).to(dtype),
         'mesh_pos': torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
