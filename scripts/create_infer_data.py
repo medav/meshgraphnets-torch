@@ -17,7 +17,7 @@ if __name__ == '__main__':
 
     if model == 'cloth': import cloth as M
     elif model == 'cfd': import cfd as M
-    elif model == 'dp': import deforming_plate as M
+    elif model == 'deforming_plate': import deforming_plate as M
     else: raise ValueError(f'Unknown model {model}')
 
     M.create_infer_data(

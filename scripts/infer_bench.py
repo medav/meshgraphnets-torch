@@ -29,11 +29,14 @@ if __name__ == '__main__':
 
     if model == 'cloth': import cloth as M
     elif model == 'cfd': import cfd as M
-    elif model == 'dp': import deforming_plate as M
+    elif model == 'deforming_plate': import deforming_plate as M
     else: raise ValueError(f'Unknown model {model}')
 
     net = M.make_model().eval().to(dev).to(dtype)
     bs, batch = M.load_batch_npz(input_file, dtype, dev)
+
+    print(f'# Nodes: {batch["mesh_pos"].size(0)}')
+    print(f'# Nodes: {batch["srcs"].size(0)}')
 
     with torch.no_grad():
         print('running...')
