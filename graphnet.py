@@ -3,7 +3,8 @@ import enum
 from typing import Optional
 import torch
 import numpy as np
-import unsorted_segsum
+import unsorted_segsum as USS
+import message_passing as MP
 
 
 def cells_to_edges(cells : torch.LongTensor) -> tuple[torch.LongTensor, torch.LongTensor]:
@@ -50,7 +51,14 @@ class EdgeSet:
     features : torch.Tensor
     senders : torch.Tensor
     receivers : torch.Tensor
+    offsets : Optional[torch.Tensor] = None
 
+    def sort_(self, num_nodes):
+        idxs = torch.argsort(self.receivers)
+        self.features = self.features[idxs]
+        self.senders = self.senders[idxs]
+        self.receivers = self.receivers[idxs]
+        self.offsets = MP.compute_edge_offsets(self.receivers, num_nodes)
 
 @dataclass
 class MultiGraph:
@@ -150,16 +158,34 @@ class GraphNetBlock(torch.nn.Module):
     def update_node_features(
         self,
         node_features : torch.Tensor,
-        edge_sets : list[EdgeSet]
+        edge_sets : list[EdgeSet],
+        fast_mp : bool = False
     ) -> torch.Tensor:
-        num_nodes = node_features.shape[-2]
-        features = [node_features]
+        num_nodes = node_features.size(0)
+        num_edge_sets = len(edge_sets)
+        dim = node_features.size(1)
 
-        for edge_set in edge_sets:
-            features.append(unsorted_segsum.unsorted_segment_sum(
-                edge_set.features, edge_set.receivers, num_nodes))
+        if fast_mp:
+            node_concat = torch.zeros(
+                (num_nodes, (num_edge_sets + 1) * dim),
+                device=node_features.device,
+                dtype=node_features.dtype)
 
-        return self.node_mlp(torch.cat(features, dim=-1))
+            MP.fused_gather_concat_out(
+                node_features,
+                [es.features for es in edge_sets],
+                [es.offsets for es in edge_sets],
+                node_concat)
+
+            return self.node_mlp(node_concat)
+        else:
+            features = [node_features]
+
+            for edge_set in edge_sets:
+                features.append(USS.unsorted_segment_sum(
+                    edge_set.features, edge_set.receivers, num_nodes))
+
+            return self.node_mlp(torch.cat(features, dim=-1))
 
     def update_edge_features(
         self,
@@ -172,13 +198,14 @@ class GraphNetBlock(torch.nn.Module):
         edge_features = edge_set.features
         return self.edge_mlps[i](torch.cat([srcs, dsts, edge_features], dim=-1))
 
-    def forward(self, graph : MultiGraph) -> MultiGraph:
+    def forward(self, graph : MultiGraph, fast_mp : bool = False) -> MultiGraph:
         node_features = graph.node_features
         edge_sets = graph.edge_sets
 
         assert len(edge_sets) == self.num_edge_sets
 
-        node_features = self.update_node_features(node_features, edge_sets)
+        node_features = self.update_node_features(
+            node_features, edge_sets, fast_mp)
 
         edge_sets = [
             EdgeSet(
@@ -258,9 +285,16 @@ class GraphNetModel(torch.nn.Module):
             for _ in range(num_mp_steps)
         ])
 
-    def forward(self, graph : MultiGraph) -> torch.Tensor:
+    def forward(self, graph : MultiGraph, fast_mp : bool = False) -> torch.Tensor:
         graph = self.encoder(graph)
+        num_nodes = graph.node_features.size(0)
+
+        if fast_mp:
+            for edge_set in graph.edge_sets:
+                edge_set.sort_(num_nodes)
+
         for block in self.blocks:
-            graph = block(graph)
+                graph = block(graph, fast_mp)
+
         return self.decoder(graph)
 
