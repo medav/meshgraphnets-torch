@@ -151,6 +151,7 @@ def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
         cells=torch.LongTensor(np_data['cells']).to(dev),
         node_type=torch.LongTensor(np_data['node_type']).to(dev),
         velocity=torch.Tensor(np_data['velocity']).to(dev).to(dtype),
+        pressure=torch.Tensor(np_data['pressure']).to(dev).to(dtype),
         mesh_pos=torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
         srcs=torch.LongTensor(np_data['srcs']).to(dev),
         dsts=torch.LongTensor(np_data['dsts']).to(dev),
