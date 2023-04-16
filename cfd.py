@@ -140,7 +140,7 @@ class CfdData(torch.utils.data.Dataset):
 
 def collate_fn(batch): return GNN.collate_common(batch, CfdSampleBatch)
 def make_model(): return CfdModel()
-def make_dataset(path): return CfdModel(path)
+def make_dataset(path): return CfdData(path)
 
 def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
     np_data = np.load(path)
