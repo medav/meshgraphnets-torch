@@ -4,7 +4,7 @@ from typing import Optional
 import torch
 import numpy as np
 import unsorted_segsum as USS
-import message_passing as MP
+import gather_concat as GC
 
 
 def cells_to_edges(cells : torch.LongTensor) -> tuple[torch.LongTensor, torch.LongTensor]:
@@ -58,7 +58,7 @@ class EdgeSet:
         self.features = self.features[idxs]
         self.senders = self.senders[idxs]
         self.receivers = self.receivers[idxs]
-        self.offsets = MP.compute_edge_offsets(self.receivers, num_nodes)
+        self.offsets = GC.compute_edge_offsets(self.receivers, num_nodes)
 
 @dataclass
 class MultiGraph:
@@ -171,7 +171,7 @@ class GraphNetBlock(torch.nn.Module):
                 device=node_features.device,
                 dtype=node_features.dtype)
 
-            MP.fused_gather_concat_out(
+            GC.fused_gather_concat_out(
                 node_features,
                 [es.features for es in edge_sets],
                 [es.offsets for es in edge_sets],
@@ -286,7 +286,7 @@ class GraphNetModel(torch.nn.Module):
             for _ in range(num_mp_steps)
         ])
 
-    def forward(self, graph : MultiGraph, fast_mp : bool = False) -> torch.Tensor:
+    def forward(self, graph : MultiGraph, fast_mp : bool = True) -> torch.Tensor:
         graph = self.encoder(graph)
         num_nodes = graph.node_features.size(0)
 

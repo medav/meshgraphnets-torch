@@ -11,47 +11,24 @@ cur_path = os.path.dirname(os.path.realpath(__file__))
 cutlass_path = '/nobackup/medavies/cutlass'
 
 if torch.cuda.is_available():
-    mgn_mp_cuda = load('mgn_mp_cuda',
-        [f'{cur_path}/message_passing.cu'],
+    gather_concat_cuda = load('gather_concat_cuda',
+        [f'{cur_path}/gather_concat.cu'],
         extra_include_paths=[f'{cutlass_path}/include', f'{cutlass_path}/tools/util/include'],
         extra_cuda_cflags=['-O3', '--expt-relaxed-constexpr', '-std=c++17', '-arch=sm_80'],
         extra_ldflags=['-O3', f'-L{cutlass_path}/build/tools/library', '-lcutlass'],
         verbose=True)
 
-    import mgn_mp_cuda
+    import gather_concat_cuda
 
 else:
-    mgn_mp_cuda = None
-    print('CUDA not available, mgn_mp_cuda will not be available')
-
-class MessagePassing(torch.autograd.Function):
-    @staticmethod
-    def forward(
-        ctx,
-        nf : torch.Tensor,
-        efs : list[torch.Tensor],
-        srcs : list[torch.Tensor],
-        dsts : list[torch.Tensor],
-        nw : torch.Tensor, nb : torch.Tensor,
-        ews : list[torch.Tensor], ebs : list[torch.Tensor]
-    ) -> torch.Tensor:
-        return None
-
-
-    @staticmethod
-    def backward(ctx, grad): raise NotImplementedError()
-
-
-def message_passing(
-
-) -> torch.Tensor:
-    raise NotImplementedError()
+    gather_concat_cuda = None
+    print('CUDA not available, gather_concat_cuda will not be available')
 
 
 class ComputeEdgeOffsets(torch.autograd.Function):
     @staticmethod
     def forward(ctx, receivers : torch.Tensor, num_nodes : int) -> torch.Tensor:
-        return mgn_mp_cuda.compute_edge_offsets(receivers, num_nodes)
+        return gather_concat_cuda.compute_edge_offsets(receivers, num_nodes)
 
     @staticmethod
     def backward(ctx, grad): raise NotImplementedError()
@@ -71,7 +48,7 @@ class FusedGatherConcatOut(torch.autograd.Function):
         out : torch.Tensor
     ):
         if len(edge_features) == 2:
-            mgn_mp_cuda.fused_gather_concat_2e_out(
+            gather_concat_cuda.fused_gather_concat_2e_out(
                 node_features,
                 edge_features[0], edge_offsets[0],
                 edge_features[1], edge_offsets[1],
@@ -131,7 +108,7 @@ def test_fused_gather_concat_1e_1():
 
     print(edge_offs)
 
-    actual = mgn_mp_cuda.fused_gather_concat_1e(
+    actual = gather_concat_cuda.fused_gather_concat_1e(
         node_features, edge_features, edge_offs)
 
     print(expected)
