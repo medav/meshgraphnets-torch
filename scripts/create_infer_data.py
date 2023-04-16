@@ -1,4 +1,5 @@
 import sys
+import os
 import torch
 import numpy as np
 import dataclasses
@@ -24,7 +25,7 @@ if __name__ == '__main__':
 
     ds = M.make_dataset(f'./data/{dataset_name}_np/{split}')
 
-    print('Setting up data loader...')
+    print('Generating infer data for torch...')
     dl = torch.utils.data.DataLoader(
         ds,
         shuffle=False,
@@ -40,3 +41,23 @@ if __name__ == '__main__':
     }
 
     np.savez_compressed(f'./data/{model}_{split}_b{batch_size}_infer.npz', **batch_np)
+
+    print('Generating infer data for tensorflow...')
+    dl = torch.utils.data.DataLoader(
+        ds,
+        shuffle=False,
+        batch_size=1,
+        num_workers=16,
+        collate_fn=M.collate_fn)
+
+    gen = iter(dl)
+
+    os.makedirs(f'./data/{model}_{split}_b{batch_size}_infer', exist_ok=True)
+    for i in range(batch_size):
+        s = next(gen)
+        batch_np = {
+            k: v.numpy()
+            for k, v in dataclasses.asdict(s).items()
+        }
+
+        np.savez_compressed(f'./data/{model}_{split}_b{batch_size}_infer/{i}.npz', **batch_np)
