@@ -10,28 +10,28 @@ torch.backends.cuda.matmul.allow_tf32 = True
 sys.path.append('.')
 
 def usage():
-    print('Usage: python infer_bench.py <model> <input_file> <num_iters>')
-    print('    (model: cfd, cloth, deforming_plate)')
+    print('Usage: python infer_profile.py <dataset> <input_file> <num_iters>')
+    print('    (dataset: flag_simple, cylinder_flow, deforming_plate)')
     exit(1)
 
 if __name__ == '__main__':
     if len(sys.argv) != 4: usage()
 
-    model = sys.argv[1]
+    dataset_name = sys.argv[1]
     input_file = sys.argv[2]
     num_iters = int(sys.argv[3])
     dev = torch.device('cuda')
     dtype = torch.float16
 
-    dataset_name = {
-        'cloth': 'cloth',
-        'cfd': 'cylinder_flow',
-        'deforming_plate': 'deforming_plate'
-    }[model]
+    model = {
+        'flag_simple': 'cloth',
+        'cylinder_flow': 'incomprns',
+        'deforming_plate': 'hyperel'
+    }[dataset_name]
 
     if model == 'cloth': import cloth as M
-    elif model == 'cfd': import cfd as M
-    elif model == 'dp': import deforming_plate as M
+    elif model == 'incomprns': import incomprns as M
+    elif model == 'hyperel': import hyperel as M
     else: raise ValueError(f'Unknown model {model}')
 
     net = M.make_model().eval().to(dev).to(dtype)

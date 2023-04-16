@@ -27,13 +27,13 @@ class NodeType(enum.IntEnum):
     SIZE = 9
 
 @dataclass
-class DeformingPlateSample(GNN.GraphNetSample):
+class HyperElasticitySample(GNN.GraphNetSample):
     world_pos : torch.Tensor
     target_world_pos : torch.Tensor
     stress : torch.Tensor
 
 @dataclass
-class DeformingPlateSampleBatch(GNN.GraphNetSampleBatch):
+class HyperElasticitySampleBatch(GNN.GraphNetSampleBatch):
     world_pos : torch.Tensor
     target_world_pos : torch.Tensor
     stress : torch.Tensor
@@ -95,7 +95,7 @@ def construct_world_edges(
 
     return torch.cat(srcss, dim=0), torch.cat(dstss, dim=0)
 
-class DeformingPlateModel(torch.nn.Module):
+class HyperElasticityModel(torch.nn.Module):
     def __init__(
         self,
         input_dim : int = 3 + NodeType.SIZE, # vx, vy, vz, one_hot(type)
@@ -124,7 +124,7 @@ class DeformingPlateModel(torch.nn.Module):
 
     def forward(
         self,
-        x : DeformingPlateSampleBatch,
+        x : HyperElasticitySampleBatch,
         known_vel : torch.Tensor,
         unnorm : bool = True
     ) -> torch.Tensor:
@@ -181,7 +181,7 @@ class DeformingPlateModel(torch.nn.Module):
         if unnorm: return self.out_norm.inverse(net_out)
         else: return net_out
 
-    def loss(self, x : DeformingPlateSampleBatch) -> torch.Tensor:
+    def loss(self, x : HyperElasticitySampleBatch) -> torch.Tensor:
         known_vel = x.target_world_pos - x.world_pos
         known_vel[x.node_type != NodeType.NORMAL, :] = 0.0
         pred = self.forward(x, known_vel, unnorm=False)
@@ -195,7 +195,7 @@ class DeformingPlateModel(torch.nn.Module):
         return residuals[mask].pow(2).mean()
 
 
-class DeformingPlateData(torch.utils.data.Dataset):
+class HyperElasticityData(torch.utils.data.Dataset):
     # Train set has avg 1276 nodes/samp
 
     def __init__(self, path):
@@ -232,7 +232,7 @@ class DeformingPlateData(torch.utils.data.Dataset):
         srcs, dsts = GNN.cells_to_edges(cells)
         world_pos = torch.Tensor(data['world_pos'][sid, ...])
 
-        return DeformingPlateSample(
+        return HyperElasticitySample(
             cells=cells,
             node_type=torch.LongTensor(data['node_type'][sid, ...]).squeeze(),
             mesh_pos=torch.Tensor(data['mesh_pos'][sid, ...]),
@@ -243,15 +243,15 @@ class DeformingPlateData(torch.utils.data.Dataset):
         )
 
 def collate_fn(batch):
-    return GNN.collate_common(batch, DeformingPlateSampleBatch)
+    return GNN.collate_common(batch, HyperElasticitySampleBatch)
 
-def make_model(): return DeformingPlateModel()
-def make_dataset(path): return DeformingPlateData(path)
+def make_model(): return HyperElasticityModel()
+def make_dataset(path): return HyperElasticityData(path)
 
 def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
     np_data = np.load(path)
 
-    return len(np_data['node_offs']), DeformingPlateSampleBatch(
+    return len(np_data['node_offs']), HyperElasticitySampleBatch(
         cell_offs=torch.LongTensor(np_data['cell_offs']).to(dev),
         node_offs=torch.LongTensor(np_data['node_offs']).to(dev),
         cells=torch.LongTensor(np_data['cells']).to(dev),

@@ -7,20 +7,27 @@ import dataclasses
 sys.path.append('.')
 
 
+def usage():
+    print('Usage: python create_infer_data.py <dataset> <split> <batch_size>')
+    print('    (dataset: flag_simple, cylinder_flow, deforming_plate)')
+    exit(1)
+
+
 if __name__ == '__main__':
-    model = sys.argv[1]
+    if len(sys.argv) != 4: usage()
+    dataset_name = sys.argv[1]
     split = sys.argv[2]
     batch_size = int(sys.argv[3])
 
-    dataset_name = {
-        'cloth': 'cloth',
-        'cfd': 'cylinder_flow',
-        'deforming_plate': 'deforming_plate'
-    }[model]
+    model = {
+        'flag_simple': 'cloth',
+        'cylinder_flow': 'incomprns',
+        'deforming_plate': 'hyperel'
+    }[dataset_name]
 
     if model == 'cloth': import cloth as M
-    elif model == 'cfd': import cfd as M
-    elif model == 'deforming_plate': import deforming_plate as M
+    elif model == 'incomprns': import incomprns as M
+    elif model == 'hyperel': import hyperel as M
     else: raise ValueError(f'Unknown model {model}')
 
     ds = M.make_dataset(f'./data/{dataset_name}_np/{split}')
@@ -40,7 +47,7 @@ if __name__ == '__main__':
         for k, v in dataclasses.asdict(batch).items()
     }
 
-    np.savez_compressed(f'./data/{model}_{split}_b{batch_size}_infer.npz', **batch_np)
+    np.savez_compressed(f'./data/{dataset_name}_{split}_b{batch_size}_infer.npz', **batch_np)
 
     print('Generating infer data for tensorflow...')
     dl = torch.utils.data.DataLoader(
@@ -52,7 +59,7 @@ if __name__ == '__main__':
 
     gen = iter(dl)
 
-    os.makedirs(f'./data/{model}_{split}_b{batch_size}_infer', exist_ok=True)
+    os.makedirs(f'./data/{dataset_name}_{split}_b{batch_size}_infer', exist_ok=True)
     for i in range(batch_size):
         s = next(gen)
         batch_np = {
@@ -60,4 +67,4 @@ if __name__ == '__main__':
             for k, v in dataclasses.asdict(s).items()
         }
 
-        np.savez_compressed(f'./data/{model}_{split}_b{batch_size}_infer/{i}.npz', **batch_np)
+        np.savez_compressed(f'./data/{dataset_name}_{split}_b{batch_size}_infer/{i}.npz', **batch_np)

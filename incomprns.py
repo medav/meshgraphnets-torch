@@ -17,18 +17,18 @@ class NodeType(enum.IntEnum):
     SIZE = 9
 
 @dataclass
-class CfdSample(GNN.GraphNetSample):
+class IncomprNsSample(GNN.GraphNetSample):
     velocity : torch.Tensor
     target_velocity : torch.Tensor
     pressure : torch.Tensor
 
 @dataclass
-class CfdSampleBatch(GNN.GraphNetSampleBatch):
+class IncomprNsSampleBatch(GNN.GraphNetSampleBatch):
     velocity : torch.Tensor
     target_velocity : torch.Tensor
     pressure : torch.Tensor
 
-class CfdModel(torch.nn.Module):
+class IncomprNsModel(torch.nn.Module):
     def __init__(
         self,
         input_dim : int = 2 + NodeType.SIZE, # vx, vy, one_hot(type)
@@ -52,7 +52,7 @@ class CfdModel(torch.nn.Module):
         self.node_norm = GNN.InvertableNorm((input_dim,))
         self.edge_norm = GNN.InvertableNorm((2 + 1,)) # 2D coord + length
 
-    def forward(self, x : CfdSampleBatch, unnorm : bool = True) -> torch.Tensor:
+    def forward(self, x : IncomprNsSampleBatch, unnorm : bool = True) -> torch.Tensor:
         """Predicts Delta V"""
 
         node_type_oh = \
@@ -77,7 +77,7 @@ class CfdModel(torch.nn.Module):
         if unnorm: return self.out_norm.inverse(net_out)
         else: return net_out
 
-    def loss(self, x : CfdSampleBatch) -> torch.Tensor:
+    def loss(self, x : IncomprNsSampleBatch) -> torch.Tensor:
         pred = self.forward(x, unnorm=False)
 
         with torch.no_grad():
@@ -92,7 +92,7 @@ class CfdModel(torch.nn.Module):
         return residuals[mask].pow(2).mean()
 
 
-class CfdData(torch.utils.data.Dataset):
+class IncomprNsData(torch.utils.data.Dataset):
     def __init__(self, path):
         self.path = path
         self.meta = json.loads(open(os.path.join(path, 'meta.json')).read())
@@ -127,7 +127,7 @@ class CfdData(torch.utils.data.Dataset):
         srcs, dsts = GNN.cells_to_edges(cells)
         velocity = torch.Tensor(data['velocity'][sid, ...])
 
-        return CfdSample(
+        return IncomprNsSample(
             cells=cells,
             node_type=torch.LongTensor(data['node_type'][sid, ...]).squeeze(),
             mesh_pos=torch.Tensor(data['mesh_pos'][sid, ...]),
@@ -138,14 +138,14 @@ class CfdData(torch.utils.data.Dataset):
         )
 
 
-def collate_fn(batch): return GNN.collate_common(batch, CfdSampleBatch)
-def make_model(): return CfdModel()
-def make_dataset(path): return CfdData(path)
+def collate_fn(batch): return GNN.collate_common(batch, IncomprNsSampleBatch)
+def make_model(): return IncomprNsModel()
+def make_dataset(path): return IncomprNsData(path)
 
 def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
     np_data = np.load(path)
 
-    return len(np_data['node_offs']), CfdSampleBatch(
+    return len(np_data['node_offs']), IncomprNsSampleBatch(
         cell_offs=torch.LongTensor(np_data['cell_offs']).to(dev),
         node_offs=torch.LongTensor(np_data['node_offs']).to(dev),
         cells=torch.LongTensor(np_data['cells']).to(dev),
