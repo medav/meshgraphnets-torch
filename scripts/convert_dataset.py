@@ -60,8 +60,10 @@ os.makedirs(out_dir, exist_ok=True)
 ds = load_dataset(dataset_name, split)
 
 first = True
+outfile = os.path.join(out_dir, 'meta.json')
+outfile = '/dev/null'
 
-with open(os.path.join(out_dir, 'meta.json'), 'w') as meta_file:
+with open(outfile, 'w') as meta_file:
     print('{', file=meta_file)
     print('    "files": {', file=meta_file)
     for i, record in enumerate(ds):
@@ -74,7 +76,7 @@ with open(os.path.join(out_dir, 'meta.json'), 'w') as meta_file:
         if first: first = False
         else: print(',', file=meta_file)
 
-        np.savez_compressed(os.path.join(out_dir, f'ex{i}.npz'), **record)
+        # np.savez_compressed(os.path.join(out_dir, f'ex{i}.npz'), **record)
         print(f'        "ex{i}.npz": {ns}', file=meta_file, end='')
 
     print('', file=meta_file)

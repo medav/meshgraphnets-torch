@@ -35,13 +35,13 @@ if __name__ == '__main__':
     net = M.make_model().eval().to(dev).to(dtype)
     bs, batch = M.load_batch_npz(input_file, dtype, dev)
 
-    print(f'# Nodes: {batch["mesh_pos"].size(0)}')
-    print(f'# Nodes: {batch["srcs"].size(0)}')
+    print(f'# Nodes: {batch.mesh_pos.size(0)}')
+    print(f'# Nodes: {batch.srcs.size(0)}')
 
     with torch.no_grad():
         print('running...')
         t0 = time.perf_counter()
-        for _ in range(num_iters): M.infer(net, batch)
+        for _ in range(num_iters): net.loss(batch)
         t1 = time.perf_counter()
         print('done')
 

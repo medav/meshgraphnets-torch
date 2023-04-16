@@ -4,6 +4,7 @@ import json
 import os
 import numpy as np
 import graphnet as GNN
+from dataclasses import dataclass
 
 
 class NodeType(enum.IntEnum):
@@ -16,6 +17,17 @@ class NodeType(enum.IntEnum):
     WALL_BOUNDARY = 6
     SIZE = 9
 
+@dataclass
+class ClothSample(GNN.GraphNetSample):
+    world_pos : torch.Tensor
+    prev_world_pos : torch.Tensor
+    target_world_pos : torch.Tensor
+
+@dataclass
+class ClothSampleBatch(GNN.GraphNetSampleBatch):
+    world_pos : torch.Tensor
+    prev_world_pos : torch.Tensor
+    target_world_pos : torch.Tensor
 
 class ClothModel(torch.nn.Module):
     def __init__(
@@ -41,27 +53,18 @@ class ClothModel(torch.nn.Module):
         self.node_norm = GNN.InvertableNorm((input_dim,))
         self.edge_norm = GNN.InvertableNorm((7,)) # 2D coord + 3D coord + 2*length = 7
 
-    def forward(
-        self,
-        node_type : torch.Tensor,
-        mesh_pos: torch.Tensor,
-        world_pos : torch.Tensor,
-        prev_world_pos: torch.Tensor,
-        srcs : torch.LongTensor,
-        dsts : torch.LongTensor,
-        unnorm : bool = True
-    ) -> torch.Tensor:
+    def forward(self, x : ClothSampleBatch, unnorm : bool = True) -> torch.Tensor:
         """Predicts Delta V"""
 
         node_type_oh = \
-            torch.nn.functional.one_hot(node_type, num_classes=NodeType.SIZE) \
+            torch.nn.functional.one_hot(x.node_type, num_classes=NodeType.SIZE) \
                 .squeeze()
 
-        velocity = world_pos - prev_world_pos
+        velocity = x.world_pos - x.prev_world_pos
 
         node_features = torch.cat([velocity, node_type_oh], dim=-1)
-        rel_mesh_pos = mesh_pos[srcs, :] - mesh_pos[dsts, :]
-        rel_world_pos = world_pos[srcs, :] - world_pos[dsts, :]
+        rel_mesh_pos = x.mesh_pos[x.srcs, :] - x.mesh_pos[x.dsts, :]
+        rel_world_pos = x.world_pos[x.srcs, :] - x.world_pos[x.dsts, :]
 
         edge_features = torch.cat([
             rel_mesh_pos,
@@ -72,7 +75,7 @@ class ClothModel(torch.nn.Module):
 
         graph = GNN.MultiGraph(
             node_features=self.node_norm(node_features),
-            edge_sets=[ GNN.EdgeSet(self.edge_norm(edge_features), srcs, dsts) ]
+            edge_sets=[ GNN.EdgeSet(self.edge_norm(edge_features), x.srcs, x.dsts) ]
         )
 
         net_out = self.graph_net(graph)
@@ -80,36 +83,17 @@ class ClothModel(torch.nn.Module):
         if unnorm: return self.out_norm.inverse(net_out)
         else: return net_out
 
-    def loss(
-        self,
-        node_type : torch.Tensor,
-        mesh_pos: torch.Tensor,
-        world_pos : torch.Tensor,
-        prev_world_pos: torch.Tensor,
-        target_world_pos: torch.Tensor,
-        srcs : torch.LongTensor,
-        dsts : torch.LongTensor,
-    ) -> torch.Tensor:
-
-        pred = self.forward(
-            node_type,
-            mesh_pos,
-            world_pos,
-            prev_world_pos,
-            srcs,
-            dsts,
-            unnorm=False
-        )
+    def loss(self, x : ClothSampleBatch) -> torch.Tensor:
+        pred = self.forward(x, unnorm=False)
 
         with torch.no_grad():
-            target_accel = target_world_pos - 2*world_pos + prev_world_pos
+            target_accel = x.target_world_pos - 2 * x.world_pos + x.prev_world_pos
             target_accel_norm = self.out_norm(target_accel)
 
         residuals = (target_accel_norm - pred).sum(dim=-1)
-
-        mask = (node_type == NodeType.NORMAL).squeeze()
-
+        mask = (x.node_type == NodeType.NORMAL).squeeze()
         return residuals[mask].pow(2).mean()
+
 
 class ClothData(torch.utils.data.Dataset):
     def __init__(self, path):
@@ -146,7 +130,8 @@ class ClothData(torch.utils.data.Dataset):
         srcs, dsts = GNN.cells_to_edges(cells)
         world_pos = torch.Tensor(data['world_pos'][sid + 1, ...])
 
-        return dict(
+        return ClothSample(
+            cells=cells,
             node_offs=torch.LongTensor([0]),
             node_type=torch.LongTensor(data['node_type'][sid, ...]).squeeze(),
             mesh_pos=torch.Tensor(data['mesh_pos'][sid, ...]),
@@ -156,74 +141,24 @@ class ClothData(torch.utils.data.Dataset):
             srcs=srcs, dsts=dsts
         )
 
-
-def collate_fn(batch):
-    node_offs = torch.LongTensor([
-        0 if i == 0 else batch[i - 1]['node_type'].shape[0]
-        for i in range(len(batch))
-    ]).cumsum(dim=0)
-
-    srcss = []
-    dstss = []
-
-    for i in range(len(batch)):
-        srcss.append(batch[i]['srcs'] + node_offs[i])
-        dstss.append(batch[i]['dsts'] + node_offs[i])
-
-    return dict(
-        node_offs=node_offs,
-        node_type=torch.cat([b['node_type'] for b in batch], dim=0),
-        mesh_pos=torch.cat([b['mesh_pos'] for b in batch], dim=0),
-        world_pos=torch.cat([b['world_pos'] for b in batch], dim=0),
-        target_world_pos=torch.cat([b['target_world_pos'] for b in batch], dim=0),
-        prev_world_pos=torch.cat([b['prev_world_pos'] for b in batch], dim=0),
-        srcs=torch.cat(srcss, dim=0),
-        dsts=torch.cat(dstss, dim=0),
-    )
-
-
-def create_infer_data(bs : int, dataset_path : str, output_path : str):
-    ds = ClothData(dataset_path)
-
-    print('Setting up data loader...')
-    dl = torch.utils.data.DataLoader(
-        ds,
-        shuffle=False,
-        batch_size=bs,
-        num_workers=16,
-        collate_fn=collate_fn)
-
-    batch = next(iter(dl))
-
-    batch_np = {
-        'node_offs': batch['node_offs'].numpy(),
-        'node_type': batch['node_type'].numpy(),
-        'mesh_pos': batch['mesh_pos'].numpy(),
-        'world_pos': batch['world_pos'].numpy(),
-        'prev_world_pos': batch['target_world_pos'].numpy(),
-        'target_world_pos': batch['target_world_pos'].numpy(),
-        'srcs': batch['srcs'].numpy(),
-        'dsts': batch['dsts'].numpy()
-    }
-
-    np.savez_compressed(output_path, **batch_np)
-
-
+def collate_fn(batch): return GNN.collate_common(batch, ClothSampleBatch)
 def make_model(): return ClothModel()
 def make_dataset(path): return ClothData(path)
 
 def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
     np_data = np.load(path)
 
-    return len(np_data['node_offs']), {
-        'node_offs': torch.LongTensor(np_data['node_offs']).to(dev),
-        'node_type': torch.LongTensor(np_data['node_type']).to(dev),
-        'mesh_pos': torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
-        'world_pos': torch.Tensor(np_data['world_pos']).to(dev).to(dtype),
-        'prev_world_pos': torch.Tensor(np_data['prev_world_pos']).to(dev).to(dtype),
-        'target_world_pos': torch.Tensor(np_data['target_world_pos']).to(dev).to(dtype),
-        'srcs': torch.LongTensor(np_data['srcs']).to(dev),
-        'dsts': torch.LongTensor(np_data['dsts']).to(dev)
-    }
+    return len(np_data['node_offs']), ClothSampleBatch(
+        cell_offs=torch.LongTensor(np_data['cell_offs']).to(dev),
+        node_offs=torch.LongTensor(np_data['node_offs']).to(dev),
+        cells=torch.LongTensor(np_data['cells']).to(dev),
+        node_type=torch.LongTensor(np_data['node_type']).to(dev),
+        mesh_pos=torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
+        world_pos=torch.Tensor(np_data['world_pos']).to(dev).to(dtype),
+        prev_world_pos=torch.Tensor(np_data['prev_world_pos']).to(dev).to(dtype),
+        target_world_pos=torch.Tensor(np_data['target_world_pos']).to(dev).to(dtype),
+        srcs=torch.LongTensor(np_data['srcs']).to(dev),
+        dsts=torch.LongTensor(np_data['dsts']).to(dev)
+    )
 
 def infer(net, batch): return net.loss(**batch)

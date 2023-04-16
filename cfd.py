@@ -4,7 +4,7 @@ import json
 import os
 import numpy as np
 import graphnet as GNN
-
+from dataclasses import dataclass
 
 class NodeType(enum.IntEnum):
     NORMAL = 0
@@ -16,6 +16,17 @@ class NodeType(enum.IntEnum):
     WALL_BOUNDARY = 6
     SIZE = 9
 
+@dataclass
+class CfdSample(GNN.GraphNetSample):
+    velocity : torch.Tensor
+    target_velocity : torch.Tensor
+    pressure : torch.Tensor
+
+@dataclass
+class CfdSampleBatch(GNN.GraphNetSampleBatch):
+    velocity : torch.Tensor
+    target_velocity : torch.Tensor
+    pressure : torch.Tensor
 
 class CfdModel(torch.nn.Module):
     def __init__(
@@ -41,23 +52,15 @@ class CfdModel(torch.nn.Module):
         self.node_norm = GNN.InvertableNorm((input_dim,))
         self.edge_norm = GNN.InvertableNorm((2 + 1,)) # 2D coord + length
 
-    def forward(
-        self,
-        node_type : torch.LongTensor,
-        velocity : torch.Tensor,
-        mesh_pos : torch.Tensor,
-        srcs : torch.LongTensor,
-        dsts : torch.LongTensor,
-        unnorm : bool = True
-    ) -> torch.Tensor:
+    def forward(self, x : CfdSampleBatch, unnorm : bool = True) -> torch.Tensor:
         """Predicts Delta V"""
 
         node_type_oh = \
-            torch.nn.functional.one_hot(node_type, num_classes=NodeType.SIZE) \
+            torch.nn.functional.one_hot(x.node_type, num_classes=NodeType.SIZE) \
                 .squeeze()
 
-        node_features = torch.cat([velocity, node_type_oh], dim=-1)
-        rel_mesh_pos = mesh_pos[srcs, :] - mesh_pos[dsts, :]
+        node_features = torch.cat([x.velocity, node_type_oh], dim=-1)
+        rel_mesh_pos = x.mesh_pos[x.srcs, :] - x.mesh_pos[x.dsts, :]
 
         edge_features = torch.cat([
             rel_mesh_pos,
@@ -66,7 +69,7 @@ class CfdModel(torch.nn.Module):
 
         graph = GNN.MultiGraph(
             node_features=self.node_norm(node_features),
-            edge_sets=[ GNN.EdgeSet(self.edge_norm(edge_features), srcs, dsts) ]
+            edge_sets=[ GNN.EdgeSet(self.edge_norm(edge_features), x.srcs, x.dsts) ]
         )
 
         net_out = self.graph_net(graph)
@@ -74,39 +77,22 @@ class CfdModel(torch.nn.Module):
         if unnorm: return self.out_norm.inverse(net_out)
         else: return net_out
 
-    def loss(
-        self,
-        node_offs : torch.Tensor,
-        node_type : torch.Tensor,
-        velocity : torch.Tensor,
-        mesh_pos : torch.Tensor,
-        srcs : torch.LongTensor,
-        dsts : torch.LongTensor,
-        target_velocity : torch.Tensor
-    ) -> torch.Tensor:
-
-        pred = self.forward(
-            node_type,
-            velocity,
-            mesh_pos,
-            srcs,
-            dsts,
-            unnorm=False
-        )
+    def loss(self, x : CfdSampleBatch) -> torch.Tensor:
+        pred = self.forward(x, unnorm=False)
 
         with torch.no_grad():
-            delta_v = target_velocity - velocity
+            delta_v = x.target_velocity - x.velocity
             delta_v_norm = self.out_norm(delta_v)
 
         residuals = (delta_v_norm - pred).sum(dim=-1)
-
-        mask = (node_type == NodeType.NORMAL) \
-            .logical_or(node_type == NodeType.OUTFLOW) \
+        mask = (x.node_type == NodeType.NORMAL) \
+            .logical_or(x.node_type == NodeType.OUTFLOW) \
             .squeeze()
 
         return residuals[mask].pow(2).mean()
 
-class CylinderFlowData(torch.utils.data.Dataset):
+
+class CfdData(torch.utils.data.Dataset):
     def __init__(self, path):
         self.path = path
         self.meta = json.loads(open(os.path.join(path, 'meta.json')).read())
@@ -141,8 +127,8 @@ class CylinderFlowData(torch.utils.data.Dataset):
         srcs, dsts = GNN.cells_to_edges(cells)
         velocity = torch.Tensor(data['velocity'][sid, ...])
 
-        return dict(
-            node_offs=torch.LongTensor([0]),
+        return CfdSample(
+            cells=cells,
             node_type=torch.LongTensor(data['node_type'][sid, ...]).squeeze(),
             mesh_pos=torch.Tensor(data['mesh_pos'][sid, ...]),
             velocity=velocity,
@@ -152,72 +138,24 @@ class CylinderFlowData(torch.utils.data.Dataset):
         )
 
 
-def collate_fn(batch):
-    node_offs = torch.LongTensor([
-        0 if i == 0 else batch[i - 1]['node_type'].shape[0]
-        for i in range(len(batch))
-    ]).cumsum(dim=0)
-
-    srcss = []
-    dstss = []
-
-    for i in range(len(batch)):
-        srcss.append(batch[i]['srcs'] + node_offs[i])
-        dstss.append(batch[i]['dsts'] + node_offs[i])
-
-    return dict(
-        node_offs=node_offs,
-        node_type=torch.cat([b['node_type'] for b in batch], dim=0),
-        mesh_pos=torch.cat([b['mesh_pos'] for b in batch], dim=0),
-        velocity=torch.cat([b['velocity'] for b in batch], dim=0),
-        target_velocity=torch.cat([b['target_velocity'] for b in batch], dim=0),
-        pressure=torch.cat([b['pressure'] for b in batch], dim=0),
-        srcs=torch.cat(srcss, dim=0),
-        dsts=torch.cat(dstss, dim=0),
-    )
-
-
-def create_infer_data(bs : int, dataset_path : str, output_path : str):
-    ds = CylinderFlowData(dataset_path)
-
-    print('Setting up data loader...')
-    dl = torch.utils.data.DataLoader(
-        ds,
-        shuffle=False,
-        batch_size=bs,
-        num_workers=4, # changed to 4 from 16
-        collate_fn=collate_fn)
-
-    batch = next(iter(dl))
-
-    batch_np = {
-        'node_offs': batch['node_offs'].numpy(),
-        'node_type': batch['node_type'].numpy(),
-        'velocity': batch['velocity'].numpy(),
-        'mesh_pos': batch['mesh_pos'].numpy(),
-        'srcs': batch['srcs'].numpy(),
-        'dsts': batch['dsts'].numpy(),
-        'target_velocity': batch['target_velocity'].numpy()
-    }
-
-    np.savez_compressed(output_path, **batch_np)
-
-
+def collate_fn(batch): return GNN.collate_common(batch, CfdSampleBatch)
 def make_model(): return CfdModel()
-def make_dataset(path): return CylinderFlowData(path)
+def make_dataset(path): return CfdModel(path)
 
 def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
     np_data = np.load(path)
 
-    return len(np_data['node_offs']), {
-        'node_offs': torch.LongTensor(np_data['node_offs']).to(dev),
-        'node_type': torch.LongTensor(np_data['node_type']).to(dev),
-        'velocity': torch.Tensor(np_data['velocity']).to(dev).to(dtype),
-        'mesh_pos': torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
-        'srcs': torch.LongTensor(np_data['srcs']).to(dev),
-        'dsts': torch.LongTensor(np_data['dsts']).to(dev),
-        'target_velocity': torch.Tensor(np_data['target_velocity']).to(dev).to(dtype)
-    }
+    return len(np_data['node_offs']), CfdSampleBatch(
+        cell_offs=torch.LongTensor(np_data['cell_offs']).to(dev),
+        node_offs=torch.LongTensor(np_data['node_offs']).to(dev),
+        cells=torch.LongTensor(np_data['cells']).to(dev),
+        node_type=torch.LongTensor(np_data['node_type']).to(dev),
+        velocity=torch.Tensor(np_data['velocity']).to(dev).to(dtype),
+        mesh_pos=torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
+        srcs=torch.LongTensor(np_data['srcs']).to(dev),
+        dsts=torch.LongTensor(np_data['dsts']).to(dev),
+        target_velocity=torch.Tensor(np_data['target_velocity']).to(dev).to(dtype)
+    )
 
 def infer(net, batch): net.loss(**batch)
 

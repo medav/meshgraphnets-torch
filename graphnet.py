@@ -45,6 +45,57 @@ def cells_to_edges(cells : torch.LongTensor) -> tuple[torch.LongTensor, torch.Lo
 
     return torch.cat([srcs, dsts], dim=0), torch.cat([dsts, srcs], dim=0)
 
+@dataclass
+class GraphNetSample:
+    cells : torch.Tensor
+    node_type : torch.Tensor
+    mesh_pos : torch.Tensor
+    srcs : torch.Tensor
+    dsts : torch.Tensor
+
+@dataclass
+class GraphNetSampleBatch(GraphNetSample):
+    cell_offs : torch.Tensor
+    node_offs : torch.Tensor
+
+def collate_common(batch : list[GraphNetSample], ty):
+    custom_field_names = set(batch[0].__dataclass_fields__.keys()) - \
+        set(GraphNetSample.__dataclass_fields__.keys())
+
+    cell_offs = torch.LongTensor([
+        0 if i == 0 else batch[i - 1].cells.size(0)
+        for i in range(len(batch))
+    ]).cumsum(dim=0)
+
+    node_offs = torch.LongTensor([
+        0 if i == 0 else batch[i - 1].node_type.size(0)
+        for i in range(len(batch))
+    ]).cumsum(dim=0)
+
+    cellss = []
+    srcss = []
+    dstss = []
+
+    for i in range(len(batch)):
+        cellss.append(batch[i].cells + cell_offs[i])
+        srcss.append(batch[i].srcs + node_offs[i])
+        dstss.append(batch[i].srcs + node_offs[i])
+
+    custom_fields = {
+        k: torch.cat([getattr(b, k) for b in batch], dim=0)
+        for k in custom_field_names
+    }
+
+    return ty(
+        cell_offs=cell_offs,
+        node_offs=node_offs,
+        cells=torch.cat(cellss, dim=0),
+        node_type=torch.cat([b.node_type for b in batch], dim=0),
+        mesh_pos=torch.cat([b.mesh_pos for b in batch], dim=0),
+        srcs=torch.cat(srcss, dim=0),
+        dsts=torch.cat(dstss, dim=0),
+        **custom_fields
+    )
 
 @dataclass
 class EdgeSet:

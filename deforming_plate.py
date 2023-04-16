@@ -11,6 +11,7 @@ import os
 import functools
 import numpy as np
 import graphnet as GNN
+from dataclasses import dataclass
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.benchmark = True
@@ -24,6 +25,18 @@ class NodeType(enum.IntEnum):
     OUTFLOW = 5
     WALL_BOUNDARY = 6
     SIZE = 9
+
+@dataclass
+class DeformingPlateSample(GNN.GraphNetSample):
+    world_pos : torch.Tensor
+    target_world_pos : torch.Tensor
+    stress : torch.Tensor
+
+@dataclass
+class DeformingPlateSampleBatch(GNN.GraphNetSampleBatch):
+    world_pos : torch.Tensor
+    target_world_pos : torch.Tensor
+    stress : torch.Tensor
 
 
 def arange2d(m, n, dev):
@@ -111,13 +124,8 @@ class DeformingPlateModel(torch.nn.Module):
 
     def forward(
         self,
-        node_offs : torch.LongTensor,
-        node_type : torch.LongTensor,
-        mesh_pos : torch.Tensor,
-        world_pos : torch.Tensor,
+        x : DeformingPlateSampleBatch,
         known_vel : torch.Tensor,
-        srcs : torch.LongTensor,
-        dsts : torch.LongTensor,
         unnorm : bool = True
     ) -> torch.Tensor:
         """Predicts Velocity"""
@@ -127,7 +135,7 @@ class DeformingPlateModel(torch.nn.Module):
         #
 
         node_type_oh = \
-            torch.nn.functional.one_hot(node_type, num_classes=NodeType.SIZE) \
+            torch.nn.functional.one_hot(x.node_type, num_classes=NodeType.SIZE) \
                 .squeeze()
 
         node_features = torch.cat([known_vel, node_type_oh], dim=-1)
@@ -136,8 +144,8 @@ class DeformingPlateModel(torch.nn.Module):
         # Mesh Edge Features
         #
 
-        rel_mesh_pos = mesh_pos[srcs, :] - mesh_pos[dsts, :]
-        rel_world_mesh_pos = world_pos[srcs, :] - mesh_pos[dsts, :]
+        rel_mesh_pos = x.mesh_pos[x.srcs, :] - x.mesh_pos[x.dsts, :]
+        rel_world_mesh_pos = x.world_pos[x.srcs, :] - x.mesh_pos[x.dsts, :]
 
         mesh_edge_features = torch.cat([
             rel_mesh_pos,
@@ -151,8 +159,8 @@ class DeformingPlateModel(torch.nn.Module):
         # World Edge Features
         #
 
-        wsrcs, wdsts = construct_world_edges(node_offs, world_pos, node_type)
-        rel_world_pos = world_pos[wsrcs, :] - world_pos[wdsts, :]
+        wsrcs, wdsts = construct_world_edges(x.node_offs, x.world_pos, x.node_type)
+        rel_world_pos = x.world_pos[wsrcs, :] - x.world_pos[wdsts, :]
 
         world_edge_features = torch.cat([
             rel_world_pos,
@@ -163,7 +171,7 @@ class DeformingPlateModel(torch.nn.Module):
         graph = GNN.MultiGraph(
             node_features=self.node_norm(node_features),
             edge_sets=[
-                GNN.EdgeSet(self.mesh_edge_norm(mesh_edge_features), srcs, dsts),
+                GNN.EdgeSet(self.mesh_edge_norm(mesh_edge_features), x.srcs, x.dsts),
                 GNN.EdgeSet(self.world_edge_norm(world_edge_features), wsrcs, wdsts)
             ]
         )
@@ -173,38 +181,19 @@ class DeformingPlateModel(torch.nn.Module):
         if unnorm: return self.out_norm.inverse(net_out)
         else: return net_out
 
-    def loss(
-        self,
-        node_offs : torch.LongTensor,
-        node_type : torch.LongTensor,
-        mesh_pos : torch.Tensor,
-        world_pos : torch.Tensor,
-        target_world_pos : torch.Tensor,
-        srcs : torch.LongTensor,
-        dsts : torch.LongTensor,
-    ) -> torch.Tensor:
-
-        known_vel = target_world_pos - world_pos
-        known_vel[node_type != NodeType.NORMAL, :] = 0.0
-
-        pred = self.forward(
-            node_offs,
-            node_type,
-            mesh_pos,
-            world_pos,
-            known_vel,
-            srcs,
-            dsts,
-            unnorm=False
-        )
+    def loss(self, x : DeformingPlateSampleBatch) -> torch.Tensor:
+        known_vel = x.target_world_pos - x.world_pos
+        known_vel[x.node_type != NodeType.NORMAL, :] = 0.0
+        pred = self.forward(x, known_vel, unnorm=False)
 
         with torch.no_grad():
-            delta_x = target_world_pos - world_pos
+            delta_x = x.target_world_pos - x.world_pos
             delta_x_norm = self.out_norm(delta_x)
 
         residuals = (delta_x_norm - pred).sum(dim=-1)
-        mask = (node_type == NodeType.NORMAL) .squeeze()
+        mask = (x.node_type == NodeType.NORMAL) .squeeze()
         return residuals[mask].pow(2).mean()
+
 
 class DeformingPlateData(torch.utils.data.Dataset):
     # Train set has avg 1276 nodes/samp
@@ -243,8 +232,8 @@ class DeformingPlateData(torch.utils.data.Dataset):
         srcs, dsts = GNN.cells_to_edges(cells)
         world_pos = torch.Tensor(data['world_pos'][sid, ...])
 
-        return dict(
-            node_offs=torch.LongTensor([0]),
+        return DeformingPlateSample(
+            cells=cells,
             node_type=torch.LongTensor(data['node_type'][sid, ...]).squeeze(),
             mesh_pos=torch.Tensor(data['mesh_pos'][sid, ...]),
             world_pos=world_pos,
@@ -253,56 +242,8 @@ class DeformingPlateData(torch.utils.data.Dataset):
             srcs=srcs, dsts=dsts
         )
 
-
 def collate_fn(batch):
-    node_offs = torch.LongTensor([
-        0 if i == 0 else batch[i - 1]['node_type'].shape[0]
-        for i in range(len(batch))
-    ]).cumsum(dim=0)
-
-    srcss = []
-    dstss = []
-
-    for i in range(len(batch)):
-        srcss.append(batch[i]['srcs'] + node_offs[i])
-        dstss.append(batch[i]['dsts'] + node_offs[i])
-
-    return dict(
-        node_offs=node_offs,
-        node_type=torch.cat([b['node_type'] for b in batch], dim=0),
-        mesh_pos=torch.cat([b['mesh_pos'] for b in batch], dim=0),
-        world_pos=torch.cat([b['world_pos'] for b in batch], dim=0),
-        target_world_pos=torch.cat([b['target_world_pos'] for b in batch], dim=0),
-        stress=torch.cat([b['stress'] for b in batch], dim=0),
-        srcs=torch.cat(srcss, dim=0),
-        dsts=torch.cat(dstss, dim=0)
-    )
-
-def create_infer_data(bs : int, dataset_path : str, output_path : str):
-    ds = DeformingPlateData(dataset_path)
-
-    print('Setting up data loader...')
-    dl = torch.utils.data.DataLoader(
-        ds,
-        shuffle=False,
-        batch_size=bs,
-        num_workers=16,
-        collate_fn=collate_fn)
-
-    batch = next(iter(dl))
-
-    batch_np = {
-        'node_offs': batch['node_offs'].numpy(),
-        'node_type': batch['node_type'].numpy(),
-        'mesh_pos': batch['mesh_pos'].numpy(),
-        'world_pos': batch['world_pos'].numpy(),
-        'target_world_pos': batch['target_world_pos'].numpy(),
-        'srcs': batch['srcs'].numpy(),
-        'dsts': batch['dsts'].numpy()
-    }
-
-    np.savez_compressed(output_path, **batch_np)
-
+    return GNN.collate_common(batch, DeformingPlateSampleBatch)
 
 def make_model(): return DeformingPlateModel()
 def make_dataset(path): return DeformingPlateData(path)
@@ -310,14 +251,15 @@ def make_dataset(path): return DeformingPlateData(path)
 def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
     np_data = np.load(path)
 
-    return len(np_data['node_offs']), {
-        'node_offs': torch.LongTensor(np_data['node_offs']).to(dev),
-        'node_type': torch.LongTensor(np_data['node_type']).to(dev),
-        'mesh_pos': torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
-        'world_pos': torch.Tensor(np_data['world_pos']).to(dev).to(dtype),
-        'target_world_pos': torch.Tensor(np_data['target_world_pos']).to(dev).to(dtype),
-        'srcs': torch.LongTensor(np_data['srcs']).to(dev),
-        'dsts': torch.LongTensor(np_data['dsts']).to(dev)
-    }
-
-def infer(net, batch): return net.loss(**batch)
+    return len(np_data['node_offs']), DeformingPlateSampleBatch(
+        cell_offs=torch.LongTensor(np_data['cell_offs']).to(dev),
+        node_offs=torch.LongTensor(np_data['node_offs']).to(dev),
+        cells=torch.LongTensor(np_data['cells']).to(dev),
+        node_type=torch.LongTensor(np_data['node_type']).to(dev),
+        mesh_pos=torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
+        world_pos=torch.Tensor(np_data['world_pos']).to(dev).to(dtype),
+        target_world_pos=torch.Tensor(np_data['target_world_pos']).to(dev).to(dtype),
+        stress=torch.Tensor(np_data['stress']).to(dev).to(dtype),
+        srcs=torch.LongTensor(np_data['srcs']).to(dev),
+        dsts=torch.LongTensor(np_data['dsts']).to(dev)
+    )
