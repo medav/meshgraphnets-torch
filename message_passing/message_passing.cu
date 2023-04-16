@@ -151,16 +151,16 @@ __global__ void device_fused_gather_concat_2e(
         out[out_row_off + node_d] = nf[row_off + node_d];
     } else if (node_d < 2*D) {
         const int d_off = node_d - D;
-        accum[node_d] = __float2half(0.0f);
+        accum[d_off] = __float2half(0.0f);
 
         const int e_start = node_i == 0 ? 0 : ef0_offsets[node_i - 1];
         const int e_end = ef0_offsets[node_i];
 
         for (int e = e_start; e < e_end; e++) {
-            accum[node_d] = __hadd(accum[node_d], ef0[e * D + node_d]);
+            accum[d_off] = __hadd(accum[d_off], ef0[e * D + d_off]);
         }
 
-        out[out_row_off + node_d] = accum[node_d];
+        out[out_row_off + node_d] = accum[d_off];
     } else {
         const int d_off = node_d - D - D;
         accum[d_off] = __float2half(0.0f);

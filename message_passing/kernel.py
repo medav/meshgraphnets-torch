@@ -89,7 +89,7 @@ def fused_gather_concat_out(
         edge_offsets : list[torch.Tensor],
         out : torch.Tensor
 ):
-    return FusedGatherConcatOut.apply(
+    FusedGatherConcatOut.apply(
         node_features, edge_features, edge_offsets, out)
 
 

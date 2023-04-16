@@ -211,7 +211,8 @@ class GraphNetBlock(torch.nn.Module):
             EdgeSet(
                 features=self.update_edge_features(i, node_features, edge_set),
                 senders=edge_set.senders,
-                receivers=edge_set.receivers
+                receivers=edge_set.receivers,
+                offsets=edge_set.offsets
             )
             for i, edge_set in enumerate(edge_sets)
         ]
