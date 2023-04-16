@@ -75,59 +75,34 @@ __global__ void device_fused_gather_concat_1e(
     }
 }
 
-at::Tensor fused_gather_concat_1e(
+void fused_gather_concat_1e_out(
     at::Tensor nf,
     at::Tensor ef0,
-    at::Tensor ef0_offsets
+    at::Tensor eoffs0,
+    at::Tensor node_concat
 ) {
     CHECK_INPUT(nf);
     CHECK_INPUT(ef0);
-    CHECK_INPUT(ef0_offsets);
+    CHECK_INPUT(eoffs0);
+    CHECK_INPUT(node_concat);
 
     const int64_t D = nf.size(1);
     const int64_t NN = nf.size(0);
     const int64_t NE0 = ef0.size(0);
 
+    assert(D <= 128);
     assert(ef0.size(1) == D);
 
-    at::Tensor out = torch::zeros({NN, 2 * D}, nf.options());
-
-    device_fused_gather_concat_1e<128><<<NN, 2*D>>>(
+    device_fused_gather_concat_1e<128><<<NN, 3*D>>>(
         (half *)nf.data_ptr<at::Half>(),
-        (half *)ef0.data_ptr<at::Half>(),
-        ef0_offsets.data_ptr<int64_t>(),
-        (half *)out.data_ptr<at::Half>(),
+        (half *)ef0.data_ptr<at::Half>(), eoffs0.data_ptr<int64_t>(),
+        (half *)node_concat.data_ptr<at::Half>(),
         NN,
         NE0,
         D
     );
-
-    return out;
 }
 
-
-at::Tensor message_passing_fwd_1e_(
-    // Inputs
-    at::Tensor nf,
-    at::Tensor ef0,
-
-    // Weights
-    at::TensorList nw,
-    at::Tensor nb,
-
-    at::Tensor ew0,
-    at::Tensor eb0
-) {
-    const size_t D = nf.size(1);
-    const size_t NN = nf.size(0);
-    const size_t NE0 = ef0.size(0);
-
-    assert(ef0.size(1) == D);
-
-    // at::Tensor node_concat = torch::zeros({NN, 3 * D}, nf.options());
-
-    // at::linear(node_concat, nw, nb);
-}
 
 template<size_t MAX_D>
 __global__ void device_fused_gather_concat_2e(
@@ -220,7 +195,7 @@ at::Tensor test(std::vector<at::Tensor> x) {
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("test", &test, "Test");
-    m.def("fused_gather_concat_1e", &fused_gather_concat_1e, "Fused Gather Concat 1e");
     m.def("compute_edge_offsets", &compute_edge_offsets, "Compute Edge Offsets");
+    m.def("fused_gather_concat_1e_out", &fused_gather_concat_1e_out, "Fused Gather Concat 1e Out");
     m.def("fused_gather_concat_2e_out", &fused_gather_concat_2e_out, "Fused Gather Concat 2e Out");
 }

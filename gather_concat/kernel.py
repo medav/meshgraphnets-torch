@@ -47,7 +47,13 @@ class FusedGatherConcatOut(torch.autograd.Function):
         edge_offsets : list[torch.Tensor],
         out : torch.Tensor
     ):
-        if len(edge_features) == 2:
+        if len(edge_features) == 1:
+            gather_concat_cuda.fused_gather_concat_1e_out(
+                node_features,
+                edge_features[0], edge_offsets[0],
+                out
+            )
+        elif len(edge_features) == 2:
             gather_concat_cuda.fused_gather_concat_2e_out(
                 node_features,
                 edge_features[0], edge_offsets[0],
