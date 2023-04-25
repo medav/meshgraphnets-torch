@@ -76,6 +76,25 @@ def fused_gather_concat_out(
         node_features, edge_features, edge_offsets, out)
 
 
+def fused_gather_concat(
+        node_features : torch.Tensor,
+        edge_features : list[torch.Tensor],
+        edge_offsets : list[torch.Tensor]
+) -> torch.Tensor:
+    num_nodes = node_features.shape[0]
+    num_edge_sets = len(edge_features)
+    dim = node_features.shape[1]
+
+    out = torch.zeros(
+        (num_nodes, (num_edge_sets + 1) * dim),
+        device=node_features.device,
+        dtype=node_features.dtype)
+
+    FusedGatherConcatOut.apply(
+        node_features, edge_features, edge_offsets, out)
+
+    return out
+
 def test_compute_edge_offsets_1():
     num_nodes = 5
     receivers = torch.tensor([0, 0, 1, 1, 2, 2, 3, 4, 4, 4]).cuda()

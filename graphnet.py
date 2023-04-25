@@ -239,18 +239,10 @@ class GraphNetBlock(torch.nn.Module):
         dim = node_features.size(1)
 
         if fast_mp:
-            node_concat = torch.zeros(
-                (num_nodes, (num_edge_sets + 1) * dim),
-                device=node_features.device,
-                dtype=node_features.dtype)
-
-            GC.fused_gather_concat_out(
+            return self.node_mlp(GC.fused_gather_concat(
                 node_features,
                 [es.features for es in edge_sets],
-                [es.offsets for es in edge_sets],
-                node_concat)
-
-            return self.node_mlp(node_concat)
+                [es.offsets for es in edge_sets]))
         else:
             features = [node_features]
 
