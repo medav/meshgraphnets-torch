@@ -337,7 +337,7 @@ class GraphNetModel(torch.nn.Module):
             for _ in range(num_mp_steps)
         ])
 
-    def forward(self, graph : MultiGraph, fast_mp : bool = True) -> torch.Tensor:
+    def forward(self, graph : MultiGraph, fast_mp : bool = False) -> torch.Tensor:
         graph = self.encoder(graph)
         num_nodes = graph.node_features.size(0)
 
