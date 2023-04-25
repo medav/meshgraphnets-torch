@@ -6,6 +6,7 @@ import numpy as np
 from kernels import unsorted_segsum as USS
 from kernels import gather_concat as GC
 
+USE_FUSED_GATHER_CONCAT = False
 
 def cells_to_edges(cells : torch.LongTensor) -> tuple[torch.LongTensor, torch.LongTensor]:
     """
@@ -231,14 +232,13 @@ class GraphNetBlock(torch.nn.Module):
     def update_node_features(
         self,
         node_features : torch.Tensor,
-        edge_sets : list[EdgeSet],
-        fast_mp : bool = False
+        edge_sets : list[EdgeSet]
     ) -> torch.Tensor:
         num_nodes = node_features.size(0)
         num_edge_sets = len(edge_sets)
         dim = node_features.size(1)
 
-        if fast_mp:
+        if USE_FUSED_GATHER_CONCAT:
             return self.node_mlp(GC.fused_gather_concat(
                 node_features,
                 [es.features for es in edge_sets],
@@ -263,14 +263,13 @@ class GraphNetBlock(torch.nn.Module):
         edge_features = edge_set.features
         return self.edge_mlps[i](torch.cat([srcs, dsts, edge_features], dim=-1))
 
-    def forward(self, graph : MultiGraph, fast_mp : bool = False) -> MultiGraph:
+    def forward(self, graph : MultiGraph) -> MultiGraph:
         node_features = graph.node_features
         edge_sets = graph.edge_sets
 
         assert len(edge_sets) == self.num_edge_sets
 
-        node_features = self.update_node_features(
-            node_features, edge_sets, fast_mp)
+        node_features = self.update_node_features(node_features, edge_sets)
 
         edge_sets = [
             EdgeSet(
@@ -351,16 +350,16 @@ class GraphNetModel(torch.nn.Module):
             for _ in range(num_mp_steps)
         ])
 
-    def forward(self, graph : MultiGraph, fast_mp : bool = False) -> torch.Tensor:
+    def forward(self, graph : MultiGraph) -> torch.Tensor:
         graph = self.encoder(graph)
         num_nodes = graph.node_features.size(0)
 
-        if fast_mp:
+        if USE_FUSED_GATHER_CONCAT:
             for edge_set in graph.edge_sets:
                 edge_set.sort_(num_nodes)
 
         for block in self.blocks:
-                graph = block(graph, fast_mp)
+                graph = block(graph)
 
         return self.decoder(graph)
 
