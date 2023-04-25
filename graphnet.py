@@ -3,8 +3,8 @@ import enum
 from typing import Optional
 import torch
 import numpy as np
-import unsorted_segsum as USS
-import gather_concat as GC
+from kernels import unsorted_segsum as USS
+from kernels import gather_concat as GC
 
 
 def cells_to_edges(cells : torch.LongTensor) -> tuple[torch.LongTensor, torch.LongTensor]:
