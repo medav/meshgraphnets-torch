@@ -16,7 +16,7 @@ if torch.cuda.is_available():
         extra_include_paths=[f'{cutlass_path}/include', f'{cutlass_path}/tools/util/include'],
         extra_cuda_cflags=['-O3', '--expt-relaxed-constexpr', '-std=c++17', '-arch=sm_80'],
         extra_ldflags=['-O3', f'-L{cutlass_path}/build/tools/library', '-lcutlass'],
-        verbose=True)
+        verbose=False)
 
     import gather_concat_cuda
 
