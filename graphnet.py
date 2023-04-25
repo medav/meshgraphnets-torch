@@ -50,36 +50,45 @@ class GraphNetSample:
     cells : torch.Tensor
     node_type : torch.Tensor
     mesh_pos : torch.Tensor
-    srcs : torch.Tensor
-    dsts : torch.Tensor
+
+    def todev(self, dev):
+        def _todev(x):
+            return x.to(dev)
+
+        fields = self.__dataclass_fields__.keys()
+        for field in fields:
+            setattr(self, field, _todev(getattr(self, field)))
+
+        return self
+
+    def asdtype(self, dtype):
+        def _asdtype(x):
+            if torch.is_floating_point(x): return x.to(dtype)
+            else: return x
+
+        fields = self.__dataclass_fields__.keys()
+        for field in fields:
+            setattr(self, field, _asdtype(getattr(self, field)))
+
+        return self
 
 @dataclass
 class GraphNetSampleBatch(GraphNetSample):
-    cell_offs : torch.Tensor
     node_offs : torch.Tensor
 
 def collate_common(batch : list[GraphNetSample], ty):
     custom_field_names = set(batch[0].__dataclass_fields__.keys()) - \
         set(GraphNetSample.__dataclass_fields__.keys())
 
-    cell_offs = torch.LongTensor([
-        0 if i == 0 else batch[i - 1].cells.size(0)
-        for i in range(len(batch))
-    ]).cumsum(dim=0)
-
     node_offs = torch.LongTensor([
         0 if i == 0 else batch[i - 1].node_type.size(0)
         for i in range(len(batch))
     ]).cumsum(dim=0)
 
-    cellss = []
-    srcss = []
-    dstss = []
-
-    for i in range(len(batch)):
-        cellss.append(batch[i].cells + cell_offs[i])
-        srcss.append(batch[i].srcs + node_offs[i])
-        dstss.append(batch[i].srcs + node_offs[i])
+    cells = torch.cat([
+        b.cells + node_offs[i]
+        for i, b in enumerate(batch)
+    ], dim=0)
 
     custom_fields = {
         k: torch.cat([getattr(b, k) for b in batch], dim=0)
@@ -87,15 +96,28 @@ def collate_common(batch : list[GraphNetSample], ty):
     }
 
     return ty(
-        cell_offs=cell_offs,
         node_offs=node_offs,
-        cells=torch.cat(cellss, dim=0),
+        cells=cells,
         node_type=torch.cat([b.node_type for b in batch], dim=0),
         mesh_pos=torch.cat([b.mesh_pos for b in batch], dim=0),
-        srcs=torch.cat(srcss, dim=0),
-        dsts=torch.cat(dstss, dim=0),
         **custom_fields
     )
+
+def load_batch_npz_common(
+    path : str,
+    dtype : torch.dtype,
+    dev : torch.device,
+    batch_type
+) -> tuple[int, "batch_type"]:
+    np_data = np.load(path)
+
+    batch = batch_type(**{
+        k: torch.from_numpy(v)
+        for k, v in np_data.items()
+        if k in batch_type.__dataclass_fields__.keys()
+    }).todev(dev).asdtype(dtype)
+
+    return len(np_data['node_offs']), batch
 
 @dataclass
 class EdgeSet:

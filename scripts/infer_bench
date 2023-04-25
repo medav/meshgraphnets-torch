@@ -8,6 +8,7 @@ import time
 torch.backends.cuda.matmul.allow_tf32 = True
 
 sys.path.append('.')
+import graphnet as GNN
 
 def usage():
     print('Usage: python infer_bench.py <dataset> <input_file> <num_iters>')
@@ -37,8 +38,9 @@ if __name__ == '__main__':
     net = M.make_model().eval().to(dev).to(dtype)
     bs, batch = M.load_batch_npz(input_file, dtype, dev)
 
+    srcs, dsts = GNN.cells_to_edges(batch.cells)
     print(f'# Nodes: {batch.mesh_pos.size(0)}')
-    print(f'# Nodes: {batch.srcs.size(0)}')
+    print(f'# Edges: {srcs.size(0)}')
 
     with torch.no_grad():
         print('running...')

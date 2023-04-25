@@ -60,7 +60,9 @@ class IncomprNsModel(torch.nn.Module):
                 .squeeze()
 
         node_features = torch.cat([x.velocity, node_type_oh], dim=-1)
-        rel_mesh_pos = x.mesh_pos[x.srcs, :] - x.mesh_pos[x.dsts, :]
+
+        srcs, dsts = GNN.cells_to_edges(x.cells)
+        rel_mesh_pos = x.mesh_pos[srcs, :] - x.mesh_pos[dsts, :]
 
         edge_features = torch.cat([
             rel_mesh_pos,
@@ -69,7 +71,7 @@ class IncomprNsModel(torch.nn.Module):
 
         graph = GNN.MultiGraph(
             node_features=self.node_norm(node_features),
-            edge_sets=[ GNN.EdgeSet(self.edge_norm(edge_features), x.srcs, x.dsts) ]
+            edge_sets=[ GNN.EdgeSet(self.edge_norm(edge_features), srcs, dsts) ]
         )
 
         net_out = self.graph_net(graph)
@@ -123,18 +125,13 @@ class IncomprNsData(torch.utils.data.Dataset):
         fname, sid = self.idx_to_file(idx)
         data = np.load(os.path.join(self.path, fname))
 
-        cells = torch.LongTensor(data['cells'][sid, ...])
-        srcs, dsts = GNN.cells_to_edges(cells)
-        velocity = torch.Tensor(data['velocity'][sid, ...])
-
         return IncomprNsSample(
-            cells=cells,
+            cells=torch.LongTensor(data['cells'][sid, ...]),
             node_type=torch.LongTensor(data['node_type'][sid, ...]).squeeze(),
             mesh_pos=torch.Tensor(data['mesh_pos'][sid, ...]),
-            velocity=velocity,
+            velocity=torch.Tensor(data['velocity'][sid, ...]),
             target_velocity=torch.Tensor(data['velocity'][sid + 1, ...]),
-            pressure=torch.Tensor(data['pressure'][sid, ...]),
-            srcs=srcs, dsts=dsts
+            pressure=torch.Tensor(data['pressure'][sid, ...])
         )
 
 
@@ -143,20 +140,4 @@ def make_model(): return IncomprNsModel()
 def make_dataset(path): return IncomprNsData(path)
 
 def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
-    np_data = np.load(path)
-
-    return len(np_data['node_offs']), IncomprNsSampleBatch(
-        cell_offs=torch.LongTensor(np_data['cell_offs']).to(dev),
-        node_offs=torch.LongTensor(np_data['node_offs']).to(dev),
-        cells=torch.LongTensor(np_data['cells']).to(dev),
-        node_type=torch.LongTensor(np_data['node_type']).to(dev),
-        velocity=torch.Tensor(np_data['velocity']).to(dev).to(dtype),
-        pressure=torch.Tensor(np_data['pressure']).to(dev).to(dtype),
-        mesh_pos=torch.Tensor(np_data['mesh_pos']).to(dev).to(dtype),
-        srcs=torch.LongTensor(np_data['srcs']).to(dev),
-        dsts=torch.LongTensor(np_data['dsts']).to(dev),
-        target_velocity=torch.Tensor(np_data['target_velocity']).to(dev).to(dtype)
-    )
-
-def infer(net, batch): net.loss(**batch)
-
+    return GNN.load_batch_npz_common(path, dtype, dev, IncomprNsSampleBatch)
