@@ -1,10 +1,11 @@
 #!/bin/bash
 
+[ -x "$MGN_DATA" ] || MGN_DATA=$(realpath ../data)
 MODEL=cfd
-ODIR=/data/checkpoints/cfd_cylinder_flow
-DATA=/data/cylinder_flow
+ODIR=checkpoints/cfd_cylinder_flow
+DATA=cylinder_flow
 
-mkdir -p $ODIR
-chmod -r 777 $ODIR
+mkdir -p $MGN_DATA/$ODIR
+chmod -R 777 $MGN_DATA/$ODIR
 
-./scripts/tf1-docker.sh python train.py --model=$MODEL --checkpoint_dir=$ODIR --dataset_dir=$DATA
+./scripts/tf1-docker.sh python train.py --model=$MODEL --checkpoint_dir=/data/$ODIR --dataset_dir=/data/$DATA
