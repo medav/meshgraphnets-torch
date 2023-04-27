@@ -49,3 +49,43 @@ def triangles_to_edges(faces):
   # create two-way connectivity
   return (tf.concat([senders, receivers], axis=0),
           tf.concat([receivers, senders], axis=0))
+
+
+def construct_world_edges(world_pos, node_type):
+
+  deformable_idx = tf.where(tf.not_equal(node_type[:, 0], NodeType.OBSTACLE))
+  actuator_idx = tf.where(tf.equal(node_type[:, 0], NodeType.OBSTACLE))
+  B = tf.squeeze(tf.gather(world_pos, deformable_idx))
+  A = tf.squeeze(tf.gather(world_pos, actuator_idx))
+
+  A = tf.cast(A, tf.float64)
+  B = tf.cast(B, tf.float64)
+
+
+  thresh = 0.03
+
+  dists = squared_dist(A, B)
+  rel_close_pair_idx = tf.where(tf.math.less(dists, thresh ** 2))
+
+
+  close_pair_actuator = tf.gather(actuator_idx, rel_close_pair_idx[:,0])
+  close_pair_def = tf.gather(deformable_idx, rel_close_pair_idx[:,1])
+  close_pair_idx = tf.concat([close_pair_actuator, close_pair_def], 1)
+
+  senders, receivers = tf.unstack(close_pair_idx, 2, axis=1)
+
+
+  return (tf.concat([senders, receivers], axis=0),
+          tf.concat([receivers, senders], axis=0))
+
+def squared_dist(A, B):
+
+  row_norms_A = tf.reduce_sum(tf.square(A), axis=1)
+  row_norms_A = tf.reshape(row_norms_A, [-1, 1])  # Column vector.
+
+  row_norms_B = tf.reduce_sum(tf.square(B), axis=1)
+  row_norms_B = tf.reshape(row_norms_B, [1, -1])  # Row vector.
+
+
+
+  return row_norms_A - 2 * tf.matmul(A, B, False, True) + row_norms_B
