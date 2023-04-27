@@ -2,8 +2,8 @@
 
 [ -x "$MGN_DATA" ] || MGN_DATA=$(realpath ../data)
 MODEL=cloth
-ODIR=/data/checkpoints/cloth_flag_simple
-DATA=/data/flag_simple
+ODIR=checkpoints/cloth_flag_simple
+DATA=flag_simple
 
 mkdir -p $MGN_DATA/$ODIR
 chmod -R 777 $MGN_DATA/$ODIR
