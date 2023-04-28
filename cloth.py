@@ -137,9 +137,7 @@ class ClothData(torch.utils.data.Dataset):
             target_world_pos=torch.Tensor(data['world_pos'][sid + 2, ...])
         )
 
-def collate_fn(batch): return GNN.collate_common(batch, ClothSampleBatch)
-def make_model(): return ClothModel()
-def make_dataset(path): return ClothData(path)
-
-def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
-    return GNN.load_batch_npz_common(path, dtype, dev, ClothSampleBatch)
+sample_type = ClothSample
+batch_type = ClothSampleBatch
+model_type = ClothModel
+dataset_type = ClothData

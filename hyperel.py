@@ -238,10 +238,7 @@ class HyperElasticityData(torch.utils.data.Dataset):
             stress=torch.Tensor(data['stress'][sid, ...])
         )
 
-def collate_fn(batch): return GNN.collate_common(batch, HyperElasticitySampleBatch)
-def make_model(): return HyperElasticityModel()
-def make_dataset(path): return HyperElasticityData(path)
-
-def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
-    return GNN.load_batch_npz_common(path, dtype, dev, HyperElasticitySampleBatch)
-
+sample_type = HyperElasticitySample
+batch_type = HyperElasticitySampleBatch
+model_type = HyperElasticityModel
+dataset_type = HyperElasticityData

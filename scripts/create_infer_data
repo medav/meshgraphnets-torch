@@ -7,19 +7,32 @@ import numpy as np
 import dataclasses
 
 sys.path.append('.')
-
+import graphnet as GNN
 
 def usage():
-    print('Usage: python create_infer_data.py <dataset> <split> <batch_size>')
+    print('Usage: python create_infer_data.py <dataset> <split> <num_samples>')
     print('    (dataset: flag_simple, cylinder_flow, deforming_plate)')
     exit(1)
+
+class Sampler(torch.utils.data.Sampler):
+    def __init__(self, ds):
+        self.ds = ds
+
+    def __iter__(self):
+        stride = list(self.ds.files.items())[0][1] - 1
+        i = 0
+        for _ in range(len(self.ds)):
+            yield i
+            i = (i + stride) % (len(self.ds) - 1)
+
+    def __len__(self): return len(self.ds)
 
 
 if __name__ == '__main__':
     if len(sys.argv) != 4: usage()
     dataset_name = sys.argv[1]
     split = sys.argv[2]
-    batch_size = int(sys.argv[3])
+    num_samples = int(sys.argv[3])
 
     model = {
         'flag_simple': 'cloth',
@@ -32,41 +45,33 @@ if __name__ == '__main__':
     elif model == 'hyperel': import hyperel as M
     else: raise ValueError(f'Unknown model {model}')
 
-    ds = M.make_dataset(f'./data/{dataset_name}_np/{split}')
+    ds = M.dataset_type(f'./data/{dataset_name}_np/{split}')
 
-    print('Generating infer data for torch...')
-    dl = torch.utils.data.DataLoader(
-        ds,
-        shuffle=False,
-        batch_size=batch_size,
-        num_workers=16,
-        collate_fn=M.collate_fn)
-
-    batch = next(iter(dl))
-
-    batch_np = {
-        k: v.numpy()
-        for k, v in dataclasses.asdict(batch).items()
-    }
-
-    np.savez_compressed(f'./data/{dataset_name}_{split}_b{batch_size}_infer.npz', **batch_np)
-
-    print('Generating infer data for tensorflow...')
+    print('Generating infer data...')
     dl = torch.utils.data.DataLoader(
         ds,
         shuffle=False,
         batch_size=1,
         num_workers=16,
-        collate_fn=M.collate_fn)
+        sampler=Sampler(ds),
+        collate_fn=lambda batch: GNN.collate_common(batch, M.batch_type))
 
     gen = iter(dl)
 
-    os.makedirs(f'./data/{dataset_name}_{split}_b{batch_size}_infer', exist_ok=True)
-    for i in range(batch_size):
+    os.makedirs(
+        f'./data/{dataset_name}_{split}_{num_samples}_infer',
+        exist_ok=True)
+
+    for i in range(num_samples):
         s = next(gen)
+        num_nodes = s.node_type.size(0)
+        print(f'Sample {i}: {num_nodes} nodes')
+
         batch_np = {
             k: v.numpy()
             for k, v in dataclasses.asdict(s).items()
         }
 
-        np.savez_compressed(f'./data/{dataset_name}_{split}_b{batch_size}_infer/{i}.npz', **batch_np)
+        np.savez_compressed(
+            f'./data/{dataset_name}_{split}_{num_samples}_infer/{i}.npz',
+            **batch_np)

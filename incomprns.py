@@ -134,10 +134,7 @@ class IncomprNsData(torch.utils.data.Dataset):
             pressure=torch.Tensor(data['pressure'][sid, ...])
         )
 
-
-def collate_fn(batch): return GNN.collate_common(batch, IncomprNsSampleBatch)
-def make_model(): return IncomprNsModel()
-def make_dataset(path): return IncomprNsData(path)
-
-def load_batch_npz(path : str, dtype : torch.dtype, dev : torch.device):
-    return GNN.load_batch_npz_common(path, dtype, dev, IncomprNsSampleBatch)
+sample_type = IncomprNsSample
+batch_type = IncomprNsSampleBatch
+model_type = IncomprNsModel
+dataset_type = IncomprNsData

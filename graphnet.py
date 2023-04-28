@@ -104,21 +104,14 @@ def collate_common(batch : list[GraphNetSample], ty):
         **custom_fields
     )
 
-def load_batch_npz_common(
-    path : str,
-    dtype : torch.dtype,
-    dev : torch.device,
-    batch_type
-) -> tuple[int, "batch_type"]:
+def load_npz_common(path : str, type) -> "type":
     np_data = np.load(path)
 
-    batch = batch_type(**{
+    return type(**{
         k: torch.from_numpy(v)
         for k, v in np_data.items()
-        if k in batch_type.__dataclass_fields__.keys()
-    }).todev(dev).asdtype(dtype)
-
-    return len(np_data['node_offs']), batch
+        if k in type.__dataclass_fields__.keys()
+    })
 
 @dataclass
 class EdgeSet:
