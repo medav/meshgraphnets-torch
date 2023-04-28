@@ -5,6 +5,7 @@ import torch
 import numpy as np
 from kernels import unsorted_segsum as USS
 from kernels import gather_concat as GC
+from kernels import scatter_concat as SC
 
 USE_FUSED_GATHER_CONCAT = False
 USE_FUSED_SCATTER_CONCAT = False
@@ -254,10 +255,19 @@ class GraphNetBlock(torch.nn.Module):
         node_features : torch.Tensor,
         edge_set : EdgeSet
     ) -> torch.Tensor:
-        srcs = node_features[edge_set.senders, :]
-        dsts = node_features[edge_set.receivers, :]
-        edge_features = edge_set.features
-        return self.edge_mlps[i](torch.cat([srcs, dsts, edge_features], dim=-1))
+        if USE_FUSED_SCATTER_CONCAT:
+            return self.edge_mlps[i](
+                SC.fused_scatter_concat(
+                    node_features,
+                    edge_set.features,
+                    edge_set.senders,
+                    edge_set.receivers
+                ))
+        else:
+            srcs = node_features[edge_set.senders, :]
+            dsts = node_features[edge_set.receivers, :]
+            edge_features = edge_set.features
+            return self.edge_mlps[i](torch.cat([srcs, dsts, edge_features], dim=-1))
 
     def forward(self, graph : MultiGraph) -> MultiGraph:
         node_features = graph.node_features
