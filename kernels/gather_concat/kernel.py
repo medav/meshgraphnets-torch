@@ -38,42 +38,29 @@ def compute_edge_offsets(receivers : torch.Tensor, num_nodes : int) -> torch.Ten
     return ComputeEdgeOffsets.apply(receivers, num_nodes)
 
 
-class FusedGatherConcatOut(torch.autograd.Function):
+class FusedGatherConcat(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx,
         node_features : torch.Tensor,
         edge_features : list[torch.Tensor],
-        edge_offsets : list[torch.Tensor],
-        out : torch.Tensor
+        edge_offsets : list[torch.Tensor]
     ):
         if len(edge_features) == 1:
-            gather_concat_cuda.fused_gather_concat_1e_out(
-                node_features,
-                edge_features[0], edge_offsets[0],
-                out
+            return gather_concat_cuda.fused_gather_concat_1e(
+                node_features, edge_features[0], edge_offsets[0]
             )
         elif len(edge_features) == 2:
-            gather_concat_cuda.fused_gather_concat_2e_out(
+            return gather_concat_cuda.fused_gather_concat_2e(
                 node_features,
                 edge_features[0], edge_offsets[0],
-                edge_features[1], edge_offsets[1],
-                out
+                edge_features[1], edge_offsets[1]
             )
         else: raise NotImplementedError()
 
+
     @staticmethod
     def backward(ctx, grad): raise NotImplementedError()
-
-
-def fused_gather_concat_out(
-        node_features : torch.Tensor,
-        edge_features : list[torch.Tensor],
-        edge_offsets : list[torch.Tensor],
-        out : torch.Tensor
-):
-    FusedGatherConcatOut.apply(
-        node_features, edge_features, edge_offsets, out)
 
 
 def fused_gather_concat(
@@ -81,19 +68,9 @@ def fused_gather_concat(
         edge_features : list[torch.Tensor],
         edge_offsets : list[torch.Tensor]
 ) -> torch.Tensor:
-    num_nodes = node_features.shape[0]
-    num_edge_sets = len(edge_features)
-    dim = node_features.shape[1]
+    return FusedGatherConcat.apply(
+        node_features, edge_features, edge_offsets)
 
-    out = torch.zeros(
-        (num_nodes, (num_edge_sets + 1) * dim),
-        device=node_features.device,
-        dtype=node_features.dtype)
-
-    FusedGatherConcatOut.apply(
-        node_features, edge_features, edge_offsets, out)
-
-    return out
 
 def test_compute_edge_offsets_1():
     num_nodes = 5
