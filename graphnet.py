@@ -7,6 +7,9 @@ from kernels import unsorted_segsum as USS
 from kernels import gather_concat as GC
 
 USE_FUSED_GATHER_CONCAT = False
+USE_FUSED_SCATTER_CONCAT = False
+USE_FUSED_LN = False
+USE_FUSED_MLP = False
 
 def cells_to_edges(cells : torch.LongTensor) -> tuple[torch.LongTensor, torch.LongTensor]:
     """

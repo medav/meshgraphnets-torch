@@ -66,7 +66,10 @@ if __name__ == '__main__':
         print('done')
 
     print(f'Model: {M.model_type.__name__}')
-
+    print(f'Fused Gather Concat: {GNN.USE_FUSED_GATHER_CONCAT}')
+    print(f'Fused Scatter Concat: {GNN.USE_FUSED_SCATTER_CONCAT}')
+    print(f'Fused LayerNorm MLP: {GNN.USE_FUSED_LN}')
+    print(f'Fused MLP: {GNN.USE_FUSED_MLP}')
     print(f'Batch Size: {batch_size}')
     print(f'Num Iters: {num_iters}')
     print(f'Elapsed time: {t1 - t0:.2f} seconds')
