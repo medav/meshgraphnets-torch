@@ -63,7 +63,6 @@ ds = load_dataset(dataset_name, split)
 
 first = True
 outfile = os.path.join(out_dir, 'meta.json')
-outfile = '/dev/null'
 
 with open(outfile, 'w') as meta_file:
     print('{', file=meta_file)
