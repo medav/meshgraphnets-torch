@@ -29,10 +29,11 @@ class Sampler(torch.utils.data.Sampler):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 4: usage()
-    dataset_name = sys.argv[1]
-    split = sys.argv[2]
-    num_samples = int(sys.argv[3])
+    if len(sys.argv) != 5: usage()
+    out_path = sys.argv[1]
+    dataset_name = sys.argv[2]
+    split = sys.argv[3]
+    num_samples = int(sys.argv[4])
 
     model = {
         'flag_simple': 'cloth',
@@ -57,10 +58,7 @@ if __name__ == '__main__':
         collate_fn=lambda batch: GNN.collate_common(batch, M.batch_type))
 
     gen = iter(dl)
-
-    os.makedirs(
-        f'./data/{dataset_name}_{split}_{num_samples}_infer',
-        exist_ok=True)
+    os.makedirs(f'./data/{out_path}', exist_ok=True)
 
     for i in range(num_samples):
         s = next(gen)
@@ -73,5 +71,5 @@ if __name__ == '__main__':
         }
 
         np.savez_compressed(
-            f'./data/{dataset_name}_{split}_{num_samples}_infer/{i}.npz',
+            f'./data/{out_path}/{i}.npz',
             **batch_np)
