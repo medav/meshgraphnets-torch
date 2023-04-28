@@ -58,7 +58,7 @@ if __name__ == '__main__':
         collate_fn=lambda batch: GNN.collate_common(batch, M.batch_type))
 
     gen = iter(dl)
-    os.makedirs(f'./data/{out_path}', exist_ok=True)
+    os.makedirs(out_path, exist_ok=True)
 
     for i in range(num_samples):
         s = next(gen)
@@ -70,6 +70,4 @@ if __name__ == '__main__':
             for k, v in dataclasses.asdict(s).items()
         }
 
-        np.savez_compressed(
-            f'./data/{out_path}/{i}.npz',
-            **batch_np)
+        np.savez_compressed(f'{out_path}/{i}.npz', **batch_np)
