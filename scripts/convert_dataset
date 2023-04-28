@@ -78,7 +78,7 @@ with open(outfile, 'w') as meta_file:
         if first: first = False
         else: print(',', file=meta_file)
 
-        # np.savez_compressed(os.path.join(out_dir, f'ex{i}.npz'), **record)
+        np.savez_compressed(os.path.join(out_dir, f'ex{i}.npz'), **record)
         print(f'        "ex{i}.npz": {ns}', file=meta_file, end='')
 
     print('', file=meta_file)
