@@ -8,23 +8,13 @@ import core_model
 import np_dataset as dataset
 import time
 
-PARAMETERS = {
-    'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
-                size=2, batch=2, model=cfd_model),
-    # 'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
-    #               size=3, batch=1, model=cloth_model, evaluator=cloth_eval)
-}
+from parameters import *
 
-@tf.function
-def foo(inputs):
-    print(inputs)
 
 def benchmark(model, datapath, float_type=tf.float32):
     ds = dataset.load_dataset(datapath, float_type=float_type)
     ds = ds.repeat(None)
-    # ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
-    # ds = dataset.split_and_preprocess(
-    #     ds, noise_field='velocity', noise_scale=0.02, noise_gamma=1.0)
+
     inputs = tf.data.make_one_shot_iterator(ds).get_next()
     loss_op = model.loss(inputs)
 
@@ -32,12 +22,7 @@ def benchmark(model, datapath, float_type=tf.float32):
         name for name in os.listdir(datapath)
         if os.path.isfile(os.path.join(datapath, name))
     ])
-    num_iters = 30
-
-    # foo_op = foo(inputs)
-    # with tf.Session() as sess:
-    #     for _ in range(10):
-    #         sess.run(foo_op)
+    num_iters = 5
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -47,6 +32,7 @@ def benchmark(model, datapath, float_type=tf.float32):
         t1 = time.perf_counter()
         print('done')
 
+    print(f'Batch Size: 1')
     print(f'Num Samples: {num_samples}')
     print(f'Num Iters: {num_iters}')
     print(f'Elapsed time: {t1 - t0:.2f} seconds')
@@ -55,10 +41,16 @@ def benchmark(model, datapath, float_type=tf.float32):
 
 
 if __name__ == '__main__':
-    model = sys.argv[1]
+    dataset_name = sys.argv[1]
     datapath = sys.argv[2]
     tf.enable_resource_variables()
     tf.disable_eager_execution()
+
+    model = {
+        'flag_simple': 'cloth',
+        'cylinder_flow': 'cfd',
+        'deforming_plate': 'deforming_plate'
+    }[dataset_name]
 
     float_type=tf.float16
 
