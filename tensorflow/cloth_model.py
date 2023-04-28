@@ -25,22 +25,24 @@ import normalization
 class Model(snt.AbstractModule):
   """Model for static cloth simulation."""
 
-  def __init__(self, learned_model, name='Model'):
+  def __init__(self, learned_model, float_type=tf.float32, name='Model'):
     super(Model, self).__init__(name=name)
+    self.float_type = float_type
     with self._enter_variable_scope():
       self._learned_model = learned_model
       self._output_normalizer = normalization.Normalizer(
-          size=3, name='output_normalizer')
+          size=3, name='output_normalizer', float_type=float_type)
       self._node_normalizer = normalization.Normalizer(
-          size=3+common.NodeType.SIZE, name='node_normalizer')
+          size=3+common.NodeType.SIZE, name='node_normalizer',
+          float_type=float_type)
       self._edge_normalizer = normalization.Normalizer(
-          size=7, name='edge_normalizer')  # 2D coord + 3D coord + 2*length = 7
+          size=7, name='edge_normalizer', float_type=float_type)  # 2D coord + 3D coord + 2*length = 7
 
   def _build_graph(self, inputs, is_training):
     """Builds input graph."""
     # construct graph nodes
     velocity = inputs['world_pos'] - inputs['prev|world_pos']
-    node_type = tf.one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE)
+    node_type = tf.one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE, dtype=self.float_type)
     node_features = tf.concat([velocity, node_type], axis=-1)
 
     # construct graph edges

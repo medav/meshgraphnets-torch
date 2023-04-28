@@ -31,18 +31,19 @@ import os
 class Model(snt.AbstractModule):
   """Model for static cloth simulation."""
 
-  def __init__(self, learned_model, name='Model'):
+  def __init__(self, learned_model, float_type=tf.float32, name='Model'):
     super(Model, self).__init__(name=name)
+    self.float_type = float_type
     with self._enter_variable_scope():
       self._learned_model = learned_model
       self._output_normalizer = normalization.Normalizer(
-          size=3, name='output_normalizer')
+          size=3, name='output_normalizer', float_type=float_type)
       self._node_normalizer = normalization.Normalizer(
-          size=3+common.NodeType.SIZE, name='node_normalizer')
+          size=3+common.NodeType.SIZE, name='node_normalizer', float_type=float_type)
       self._edge_normalizer = normalization.Normalizer(
-          size=8, name='edge_normalizer')  # 2*(3D coord  + length) = 8
+          size=8, name='edge_normalizer', float_type=float_type)  # 2*(3D coord  + length) = 8
     self._world_edge_normalizer = normalization.Normalizer(
-        size=4, name='world_edge_normalizer') # 3D coord + length = 4
+        size=4, name='world_edge_normalizer', float_type=float_type) # 3D coord + length = 4
 
   def _build_graph(self, inputs, is_training):
     """Builds input graph."""
@@ -89,7 +90,7 @@ class Model(snt.AbstractModule):
     nonzero_velocity = inputs['target|world_pos'] - inputs['world_pos']
     zero_velocity = inputs['world_pos'] - inputs['world_pos']
     velocity = tf.where(actuator_mask, nonzero_velocity, zero_velocity)
-    node_type = tf.one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE)
+    node_type = tf.one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE, dtype=self.float_type)
     node_features = tf.concat([velocity, node_type], axis=-1)
 
 
