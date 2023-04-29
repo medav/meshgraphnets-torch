@@ -18,9 +18,9 @@ __global__ void device_compute_edge_offsets(
     int NE,
     int NN
 ) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= NE) return;
-    atomicAdd((unsigned long long *)&out[dsts[i]], (unsigned long long)1);
+    const int e = blockIdx.x * blockDim.x + threadIdx.x;
+    if (e >= NE) return;
+    atomicAdd((unsigned long long *)&out[dsts[e]], (unsigned long long)1);
 }
 
 at::Tensor compute_edge_offsets(
@@ -45,9 +45,9 @@ at::Tensor compute_edge_offsets(
 
 template<size_t MAX_D>
 __global__ void device_fused_gather_concat_2e(
-    half * nf, // [N, D]
-    half * ef0, int64_t * ef0_offsets, // [N, 3D], [N]
-    half * ef1, int64_t * ef1_offsets, // [N, 3D], [N]
+    const half * nf, // [N, D]
+    const half * ef0, const int64_t * ef0_offsets, // [N, D], [N]
+    const half * ef1, const int64_t * ef1_offsets, // [N, D], [N]
     half * out, // [N, 3D]
     const int64_t N,
     const int64_t NE0,
@@ -56,10 +56,11 @@ __global__ void device_fused_gather_concat_2e(
 ) {
     __shared__ half accum[MAX_D];
 
+    const int NES = NE1 == 0 ? 1 : 2;
     const int node_i = blockIdx.x;
     const int node_d = threadIdx.x;
     const int row_off = node_i * D;
-    const int out_row_off = node_i * 3 * D;
+    const int out_row_off = node_i * (NES + 1) * D;
     const int d_accum_off = node_d - D;
 
     assert(d_accum_off < (int)MAX_D);
