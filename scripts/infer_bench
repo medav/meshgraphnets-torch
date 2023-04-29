@@ -11,8 +11,6 @@ torch.backends.cuda.matmul.allow_tf32 = True
 sys.path.append('.')
 import graphnet as GNN
 
-GNN.USE_FUSED_GATHER_CONCAT = False
-
 def usage():
     print('Usage: python infer_bench.py <dataset> <input_path> <batch_size> <num_iters>')
     print('    (dataset: flag_simple, cylinder_flow, deforming_plate)')
