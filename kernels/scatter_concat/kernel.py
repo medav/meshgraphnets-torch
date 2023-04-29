@@ -24,32 +24,20 @@ else:
     scatter_concat_cuda = None
     print('CUDA not available, scatter_concat_cuda will not be available')
 
-class FusedScatterConcatOut(torch.autograd.Function):
+class FusedScatterConcat(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx,
         node_features : torch.Tensor,
         edge_features : torch.Tensor,
         srcs : torch.Tensor,
-        dsts : torch.Tensor,
-        out : torch.Tensor
+        dsts : torch.Tensor
     ):
-        scatter_concat_cuda.fused_scatter_concat_out(
-            node_features, edge_features, srcs, dsts, out)
+        return scatter_concat_cuda.fused_scatter_concat(
+            edge_features, node_features, srcs, dsts)
 
     @staticmethod
     def backward(ctx, grad): raise NotImplementedError()
-
-
-def fused_scatter_concat_out(
-        node_features : torch.Tensor,
-        edge_features : torch.Tensor,
-        srcs : torch.Tensor,
-        dsts : torch.Tensor,
-        out : torch.Tensor
-):
-    FusedScatterConcatOut.apply(
-        node_features, edge_features, srcs, dsts, out)
 
 def fused_scatter_concat(
         node_features : torch.Tensor,
@@ -57,15 +45,7 @@ def fused_scatter_concat(
         srcs : torch.Tensor,
         dsts : torch.Tensor
 ):
-    out = torch.zeros((
-        srcs.size(0),
-        node_features.size(1) * 2 + edge_features.size(1)
-    ), dtype=node_features.dtype, device=node_features.device)
-
-    FusedScatterConcatOut.apply(
-        node_features, edge_features, srcs, dsts, out)
-
-    return out
+    return FusedScatterConcat.apply(node_features, edge_features, srcs, dsts)
 
 def test_1():
     dev = torch.device('cuda:0')

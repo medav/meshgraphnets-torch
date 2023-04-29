@@ -22,29 +22,27 @@ __global__ void device_fused_scatter_concat(
     const int64_t NE,
     const int64_t D
 ) {
-    const int edge_i = blockIdx.x;
-    const int edge_d = threadIdx.x;
+    const int64_t edge_i = (int64_t)blockIdx.x;
+    const int64_t edge_d = (int64_t)threadIdx.x;
+    const int64_t out_idx = edge_i * 3 * D + edge_d;
 
     if (edge_d < D) {
-        out[edge_i * 3 * D + edge_d] = ef[edge_i * D + edge_d];
+        out[out_idx] = nf[srcs[edge_i] * D + (edge_d % D)];
     } else if (edge_d < 2 * D) {
-        out[edge_i * 3 * D + edge_d] = nf[srcs[edge_i] * D + edge_d - D];
+        out[out_idx] = nf[dsts[edge_i] * D + (edge_d % D)];
     } else {
-        out[edge_i * 3 * D + edge_d] = nf[dsts[edge_i] * D + edge_d - D - D];
+        out[out_idx] = ef[edge_i * D       + (edge_d % D)];
     }
-
 }
 
-void fused_scatter_concat_out(
+at::Tensor fused_scatter_concat(
     at::Tensor ef,
     at::Tensor nf,
     at::Tensor srcs,
-    at::Tensor dsts,
-    at::Tensor out
+    at::Tensor dsts
 ) {
     CHECK_INPUT(ef);
     CHECK_INPUT(nf);
-    CHECK_INPUT(out);
     CHECK_INPUT(srcs);
     CHECK_INPUT(dsts);
 
@@ -53,7 +51,11 @@ void fused_scatter_concat_out(
     const int64_t NE = ef.size(0);
 
     assert(D <= 128);
-    assert(ef.size(1) == D);
+    assert(nf.size(1) == D);
+    assert(srcs.size(0) == NE);
+    assert(dsts.size(0) == NE);
+
+    at::Tensor out = at::zeros({NE, 3*D}, nf.options());
 
     device_fused_scatter_concat<<<NE, 3*D>>>(
         (half *)ef.data_ptr<at::Half>(),
@@ -65,9 +67,10 @@ void fused_scatter_concat_out(
         NE,
         D
     );
+
+    return out;
 }
 
-
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("fused_scatter_concat_out", &fused_scatter_concat_out, "Fused Scatter Concat Out");
+    m.def("fused_scatter_concat", &fused_scatter_concat, "Fused Scatter Concat");
 }
