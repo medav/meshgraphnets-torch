@@ -11,9 +11,11 @@ import time
 from parameters import *
 
 
-def benchmark(model, datapath, float_type=tf.float32):
+def benchmark(model, datapath, bs, float_type=tf.float32):
     ds = dataset.load_dataset(datapath, float_type=float_type)
     ds = ds.repeat(None)
+    ds = dataset.batch_dataset(ds, bs)
+    ds = ds.prefetch(4)
 
     inputs = tf.data.make_one_shot_iterator(ds).get_next()
     loss_op = model.loss(inputs)
@@ -22,7 +24,7 @@ def benchmark(model, datapath, float_type=tf.float32):
         name for name in os.listdir(datapath)
         if os.path.isfile(os.path.join(datapath, name))
     ])
-    num_iters = 5
+    num_iters = 1
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -32,17 +34,18 @@ def benchmark(model, datapath, float_type=tf.float32):
         t1 = time.perf_counter()
         print('done')
 
-    print(f'Batch Size: 1')
+    print(f'Batch Size: {bs}')
     print(f'Num Samples: {num_samples}')
     print(f'Num Iters: {num_iters}')
     print(f'Elapsed time: {t1 - t0:.2f} seconds')
-    print(f'Throughput: {num_iters * num_samples / (t1 - t0):.2f} samp/sec')
+    print(f'Throughput: {num_iters * num_samples * bs / (t1 - t0):.2f} samp/sec')
 
 
 
 if __name__ == '__main__':
     dataset_name = sys.argv[1]
     datapath = sys.argv[2]
+    bs = int(sys.argv[3])
     tf.enable_resource_variables()
     tf.disable_eager_execution()
 
@@ -62,5 +65,5 @@ if __name__ == '__main__':
         message_passing_steps=15)
     model = params['model'].Model(learned_model, float_type=float_type)
 
-    benchmark(model, datapath, float_type=float_type)
+    benchmark(model, datapath, bs, float_type=float_type)
 
