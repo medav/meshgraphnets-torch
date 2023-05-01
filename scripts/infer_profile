@@ -4,24 +4,41 @@ import sys
 import numpy as np
 import torch
 import time
+import glob
 from torch.profiler import profile, record_function, ProfilerActivity
 import torch.autograd.profiler_util
+
 
 torch.backends.cuda.matmul.allow_tf32 = True
 
 sys.path.append('.')
+import graphnet as GNN
 
 def usage():
-    print('Usage: python infer_profile.py <dataset> <input_file> <num_iters>')
+    print('Usage: ./infer_profile <dataset> <input_path> <batch_size> <num_iters>')
     print('    (dataset: flag_simple, cylinder_flow, deforming_plate)')
     exit(1)
 
+class MgnDataset(torch.utils.data.Dataset):
+    def __init__(self, files, bs, sample_type, batch_type, dev, dtype):
+        self.batchs = [
+            GNN.collate_common([
+                GNN.load_npz_common(files[i + j], sample_type)
+                for j in range(bs)
+            ], batch_type).todev(dev).asdtype(dtype)
+            for i in range(0, len(files), bs)
+        ]
+
+    def __len__(self): return len(self.batchs)
+    def __getitem__(self, i): return self.batchs[i]
+
 if __name__ == '__main__':
-    if len(sys.argv) != 4: usage()
+    if len(sys.argv) != 5: usage()
 
     dataset_name = sys.argv[1]
-    input_file = sys.argv[2]
-    num_iters = int(sys.argv[3])
+    input_path = sys.argv[2]
+    batch_size = int(sys.argv[3])
+    num_iters = int(sys.argv[4])
     dev = torch.device('cuda')
     dtype = torch.float16
 
@@ -36,31 +53,39 @@ if __name__ == '__main__':
     elif model == 'hyperel': import hyperel as M
     else: raise ValueError(f'Unknown model {model}')
 
-    net = M.make_model().eval().to(dev).to(dtype)
-    bs, batch = M.load_batch_npz(input_file, dtype, dev)
+    net = M.model_type().eval().to(dev).to(dtype)
+    files = list(glob.glob(f'{input_path}/*.npz'))
+    ds = MgnDataset(files, batch_size, M.sample_type, M.batch_type, dev, dtype)
+
+    with torch.no_grad():
+        print('Benchmarking...')
+        t0 = time.perf_counter()
+        for _ in range(num_iters):
+            for i in range(len(ds)):
+                net.loss(ds[i])
+        t1 = time.perf_counter()
 
     with profile(
         activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
     ) as prof:
         with torch.no_grad():
-            print('running...')
-            t0 = time.perf_counter()
-            for _ in range(num_iters): net.loss(batch)
-            t1 = time.perf_counter()
-            print('done')
+            print('Profiling...')
+            for _ in range(1):
+                for i in range(len(ds)):
+                    net.loss(ds[i])
 
-    print(prof \
-        .key_averages(group_by_input_shape=False) \
-        .table(
-            sort_by="self_cuda_time_total",
-            max_src_column_width=1000,
-            row_limit=100,
-            top_level_events_only=False))
+    print('done')
 
-    print(f'Batch Size: {bs}')
-    print(f'Num Iters: {num_iters}')
+    print(f'Model: {M.model_type.__name__}')
+    print(f'Dataset: {dataset_name}')
+    print(f'Fused Gather Concat: {GNN.USE_FUSED_GATHER_CONCAT}')
+    print(f'Fused Scatter Concat: {GNN.USE_FUSED_SCATTER_CONCAT}')
+    print(f'Fused LayerNorm MLP: {GNN.USE_FUSED_LN}')
+    print(f'Fused MLP: {GNN.USE_FUSED_MLP}')
+    print(f'Batch Size: {batch_size}')
+    print(f'Num Benchmark Iters: {num_iters}')
     print(f'Elapsed time: {t1 - t0:.2f} seconds')
-    print(f'Throughput: {num_iters * bs / (t1 - t0):.2f} samp/sec')
+    print(f'Throughput: {num_iters * len(ds) * batch_size / (t1 - t0):.2f} samp/sec')
 
     avg_list = torch.autograd.profiler_util.EventList([
         ka
@@ -70,6 +95,5 @@ if __name__ == '__main__':
 
     print(avg_list.table(
             sort_by="self_cuda_time_total",
-            max_src_column_width=1000,
             row_limit=100,
             top_level_events_only=False))
