@@ -42,8 +42,8 @@ class Model(snt.AbstractModule):
           size=3+common.NodeType.SIZE, name='node_normalizer', float_type=float_type)
       self._edge_normalizer = normalization.Normalizer(
           size=8, name='edge_normalizer', float_type=float_type)  # 2*(3D coord  + length) = 8
-    self._world_edge_normalizer = normalization.Normalizer(
-        size=4, name='world_edge_normalizer', float_type=float_type) # 3D coord + length = 4
+      self._world_edge_normalizer = normalization.Normalizer(
+          size=4, name='world_edge_normalizer', float_type=float_type) # 3D coord + length = 4
 
   def _build_graph(self, inputs, is_training):
     """Builds input graph."""
