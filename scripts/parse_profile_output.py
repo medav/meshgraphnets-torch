@@ -48,8 +48,9 @@ with open(sys.argv[1], 'r') as f:
             elif 'unsorted_segment_sum_fwd' in name: name = 'uss'
             elif 'CatArrayBatchedCopy' in name: name = 'cat'
             elif 'gpu_index_kernel' in name: name = 'index'
+            elif 'fused_gather_concat' in name: name = 'fgc'
 
-            if name in {'gemm', 'layer_norm', 'uss', 'cat', 'index'}:
+            if name in {'gemm', 'layer_norm', 'uss', 'cat', 'index', 'fgc'}:
                 cur_breakdown[name] = cur_breakdown.get(name, 0) + self_cuda_pct
 
         if 'Self CUDA time total:' in line:
@@ -71,4 +72,5 @@ for r in records:
         str(r.breakdown.get('uss', 0) / 100),
         str(r.breakdown.get('cat', 0) / 100),
         str(r.breakdown.get('index', 0) / 100),
+        str(r.breakdown.get('fgc', 0) / 100),
     ]))
