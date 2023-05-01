@@ -50,7 +50,6 @@ if __name__ == '__main__':
     num_iters = 1
 
     ds = dataset.load_dataset(datapath, float_type=float_type)
-    ds = ds.repeat(None)
     ds = ds.prefetch(4)
 
     inputs = tf.data.make_one_shot_iterator(ds).get_next()
@@ -60,13 +59,12 @@ if __name__ == '__main__':
     tf.train.create_global_step()
 
     with tf.train.MonitoredTrainingSession(
-        hooks=[],
-        checkpoint_dir=checkpoint_dir,
-        save_checkpoint_secs=180) as sess:
+        hooks=[], checkpoint_dir=checkpoint_dir) as sess:
 
         for i in range(num_samples):
             [y] = sess.run([pred_op])
             print(y.shape)
+            np.savez_compressed(os.path.join(out_dir, f'{i}.npz'), y_ref=y)
 
 
 
