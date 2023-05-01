@@ -379,8 +379,13 @@ class GraphNetModel(torch.nn.Module):
     ):
         def hookup_mlp(mod, mlp_prefix, ln_prefix):
             for l in range(len(mod.model) - 1):
-                mod.model[l].weight = make_torch_param(weights[f'{mlp_prefix}/linear_{l}/w:0'])
-                mod.model[l].bias = make_torch_param(weights[f'{mlp_prefix}/linear_{l}/b:0'])
+                w = make_torch_param(weights[f'{mlp_prefix}/linear_{l}/w:0'].transpose(-1, -2))
+                assert tuple(w.shape) == tuple(mod.model[l].weight.shape)
+                mod.model[l].weight = w
+
+                b = make_torch_param(weights[f'{mlp_prefix}/linear_{l}/b:0'])
+                assert tuple(b.shape) == tuple(mod.model[l].bias.shape)
+                mod.model[l].bias = b
 
             if ln_prefix is not None:
                 mod.model[-1].weight = make_torch_param(weights[f'{ln_prefix}/gamma:0'])
