@@ -125,7 +125,6 @@ class HyperElasticityModel(torch.nn.Module):
     def forward(
         self,
         x : HyperElasticitySampleBatch,
-        known_vel : torch.Tensor,
         unnorm : bool = True
     ) -> torch.Tensor:
         """Predicts Velocity"""
@@ -138,6 +137,8 @@ class HyperElasticityModel(torch.nn.Module):
             torch.nn.functional.one_hot(x.node_type, num_classes=NodeType.SIZE) \
                 .squeeze()
 
+        known_vel = x.target_world_pos - x.world_pos
+        known_vel[x.node_type != NodeType.NORMAL, :] = 0.0
         node_features = torch.cat([known_vel, node_type_oh], dim=-1)
 
         #
@@ -183,9 +184,7 @@ class HyperElasticityModel(torch.nn.Module):
         else: return net_out
 
     def loss(self, x : HyperElasticitySampleBatch) -> torch.Tensor:
-        known_vel = x.target_world_pos - x.world_pos
-        known_vel[x.node_type != NodeType.NORMAL, :] = 0.0
-        pred = self.forward(x, known_vel, unnorm=False)
+        pred = self.forward(x, unnorm=False)
 
         with torch.no_grad():
             delta_x = x.target_world_pos - x.world_pos
