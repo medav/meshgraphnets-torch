@@ -12,6 +12,9 @@ USE_FUSED_SCATTER_CONCAT = False
 USE_FUSED_LN = False
 USE_FUSED_MLP = False
 
+def make_torch_param(data): return torch.nn.Parameter(torch.tensor(data))
+def make_torch_buffer(data): return torch.tensor(data)
+
 def cells_to_edges(cells : torch.LongTensor) -> tuple[torch.LongTensor, torch.LongTensor]:
     """
     cells: int32[M, D]
@@ -368,4 +371,53 @@ class GraphNetModel(torch.nn.Module):
                 graph = block(graph)
 
         return self.decoder(graph)
+
+    def import_numpy_weights(
+        self,
+        weights : dict[str, np.ndarray],
+        es_names : list[str]
+    ):
+        def hookup_mlp(mod, mlp_prefix, ln_prefix):
+            for l in range(len(mod.model) - 1):
+                mod.model[l].weight = make_torch_param(weights[f'{mlp_prefix}/linear_{l}/w:0'])
+                mod.model[l].bias = make_torch_param(weights[f'{mlp_prefix}/linear_{l}/b:0'])
+
+            if ln_prefix is not None:
+                mod.model[-1].weight = make_torch_param(weights[f'{ln_prefix}/gamma:0'])
+                mod.model[-1].bias = make_torch_param(weights[f'{ln_prefix}/beta:0'])
+
+        # Encoder
+        hookup_mlp(
+            self.encoder.node_mlp,
+            'EncodeProcessDecode/encoder/mlp',
+            'EncodeProcessDecode/encoder/layer_norm')
+
+        for e in range(len(self.encoder.edge_mlps)):
+            hookup_mlp(
+                self.encoder.edge_mlps[e],
+                f'EncodeProcessDecode/encoder/mlp_{e + 1}',
+                f'EncodeProcessDecode/encoder/layer_norm_{e + 1}')
+
+        # Message Passing
+        for i in range(len(self.blocks)):
+            block_prefix = f'EncodeProcessDecode/GraphNetBlock' if i == 0 else \
+                f'EncodeProcessDecode/GraphNetBlock_{i}'
+
+            hookup_mlp(
+                self.blocks[i].node_mlp,
+                f'{block_prefix}/node_fn/mlp',
+                f'{block_prefix}/node_fn/layer_norm')
+
+            for e in range(len(self.blocks[i].edge_mlps)):
+                hookup_mlp(
+                    self.blocks[i].edge_mlps[e],
+                    f'{block_prefix}/{es_names[e]}/mlp',
+                    f'{block_prefix}/{es_names[e]}/layer_norm')
+
+        # Decoder
+        hookup_mlp(
+            self.decoder.node_mlp,
+            'EncodeProcessDecode/decoder/mlp',
+            None)
+
 
