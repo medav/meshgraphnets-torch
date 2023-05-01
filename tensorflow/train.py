@@ -49,7 +49,8 @@ def learner(model, params):
                                     noise_gamma=params['gamma'])
   inputs = tf.data.make_one_shot_iterator(ds).get_next()
 
-  loss_op = model.loss(inputs)
+  with tf.variable_scope('Model'):
+    loss_op = model.loss(inputs)
   global_step = tf.train.create_global_step()
   lr = tf.train.exponential_decay(learning_rate=1e-4,
                                   global_step=global_step,
@@ -72,6 +73,26 @@ def learner(model, params):
       if step % 100 == 0:
         logging.info('Step %d: Loss %g', step, loss)
     logging.info('Training complete.')
+
+  with tf.train.MonitoredTrainingSession(
+      hooks=[],
+      checkpoint_dir=FLAGS.checkpoint_dir,
+      save_checkpoint_secs=180) as sess:
+    learned_weights = {
+      v.name: sess.run([v])[0]
+      for v in tf.trainable_variables()
+    }
+
+    learned_weights.update({
+      v.name: sess.run([v])[0]
+      for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='Model')
+    })
+
+    for k in learned_weights:
+      print(k, learned_weights[k].shape)
+
+    np.savez_compressed(
+      FLAGS.checkpoint_dir + '/learned_weights.npz', **learned_weights)
 
 
 def evaluator(model, params):

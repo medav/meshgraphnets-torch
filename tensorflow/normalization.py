@@ -30,12 +30,12 @@ class Normalizer(snt.AbstractModule):
     self._std_epsilon = std_epsilon
     self.float_type = float_type
     with self._enter_variable_scope():
-      self._acc_count = tf.Variable(0, dtype=float_type, trainable=False)
+      self._acc_count = tf.Variable(0, dtype=float_type, trainable=False, name='acc_count')
       self._num_accumulations = tf.Variable(0, dtype=float_type,
-                                            trainable=False)
-      self._acc_sum = tf.Variable(tf.zeros(size, float_type), trainable=False)
+                                            trainable=False, name='num_accumulations')
+      self._acc_sum = tf.Variable(tf.zeros(size, float_type), trainable=False, name='acc_sum')
       self._acc_sum_squared = tf.Variable(tf.zeros(size, float_type),
-                                          trainable=False)
+                                          trainable=False, name='acc_sum_squared')
 
   def _build(self, batched_data, accumulate=True):
     """Normalizes input data and accumulates statistics."""
