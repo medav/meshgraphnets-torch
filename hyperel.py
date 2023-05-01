@@ -147,13 +147,13 @@ class HyperElasticityModel(torch.nn.Module):
 
         srcs, dsts = GNN.cells_to_edges(x.cells)
         rel_mesh_pos = x.mesh_pos[srcs, :] - x.mesh_pos[dsts, :]
-        rel_world_mesh_pos = x.world_pos[srcs, :] - x.mesh_pos[dsts, :]
+        rel_world_mesh_pos = x.world_pos[srcs, :] - x.world_pos[dsts, :]
 
         mesh_edge_features = torch.cat([
-            rel_mesh_pos,
-            torch.norm(rel_mesh_pos, dim=-1, keepdim=True),
             rel_world_mesh_pos,
-            torch.norm(rel_world_mesh_pos, dim=-1, keepdim=True)
+            torch.norm(rel_world_mesh_pos, dim=-1, keepdim=True),
+            rel_mesh_pos,
+            torch.norm(rel_mesh_pos, dim=-1, keepdim=True)
         ], dim=-1)
 
 
