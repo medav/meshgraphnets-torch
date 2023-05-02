@@ -96,6 +96,19 @@ class ClothModel(torch.nn.Module):
         mask = (x.node_type == NodeType.NORMAL).squeeze()
         return residuals[mask].pow(2).mean()
 
+    def import_numpy_weights(self, weights : dict[str, np.ndarray]):
+        def hookup_norm(mod, prefix):
+            mod.frozen = True
+            mod.accum_count = GNN.make_torch_buffer(weights[f'{prefix}/num_accumulations:0'])
+            mod.num_accum = GNN.make_torch_buffer(weights[f'{prefix}/acc_count:0'])
+            mod.running_sum = GNN.make_torch_buffer(weights[f'{prefix}/acc_sum:0'])
+            mod.running_sum_sq = GNN.make_torch_buffer(weights[f'{prefix}/acc_sum_squared:0'])
+
+        self.graph_net.import_numpy_weights(weights, ['mesh_edges_edge_fn'])
+
+        hookup_norm(self.out_norm, 'Model/output_normalizer')
+        hookup_norm(self.node_norm, 'Model/node_normalizer')
+        hookup_norm(self.edge_norm, 'Model/edge_normalizer')
 
 class ClothData(torch.utils.data.Dataset):
     def __init__(self, path):
