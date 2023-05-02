@@ -285,9 +285,7 @@ class GraphNetBlock(torch.nn.Module):
 
         assert len(edge_sets) == self.num_edge_sets
 
-        node_features = self.update_node_features(node_features, edge_sets)
-
-        edge_sets = [
+        new_edge_sets = [
             EdgeSet(
                 features=self.update_edge_features(i, node_features, edge_set),
                 senders=edge_set.senders,
@@ -297,7 +295,13 @@ class GraphNetBlock(torch.nn.Module):
             for i, edge_set in enumerate(edge_sets)
         ]
 
-        return MultiGraph(node_features, edge_sets)
+        new_node_features = self.update_node_features(node_features, new_edge_sets)
+
+        for ei in range(self.num_edge_sets):
+            new_edge_sets[ei].features = \
+                new_edge_sets[ei].features + edge_sets[ei].features
+
+        return MultiGraph(new_node_features + node_features, new_edge_sets)
 
 
 class GraphNetEncoder(torch.nn.Module):
