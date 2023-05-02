@@ -66,6 +66,7 @@ for r in records:
 
     print(', '.join([
         str(r.batch_size),
+        str(r.throughput),
         str(r.cuda_time_tot),
         str(r.breakdown.get('layer_norm', 0) / 100),
         str(r.breakdown.get('gemm', 0) / 100),
