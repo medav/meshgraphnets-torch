@@ -378,7 +378,9 @@ class GraphNetModel(torch.nn.Module):
         es_names : list[str]
     ):
         def hookup_mlp(mod, mlp_prefix, ln_prefix):
-            for l in range(len(mod.model) - 1):
+            layer_norm_off = 0 if ln_prefix is None else 1
+
+            for l in range(len(mod.model) - layer_norm_off):
                 w = make_torch_param(weights[f'{mlp_prefix}/linear_{l}/w:0'].transpose(-1, -2))
                 assert tuple(w.shape) == tuple(mod.model[l].weight.shape)
                 mod.model[l].weight = w
@@ -388,8 +390,14 @@ class GraphNetModel(torch.nn.Module):
                 mod.model[l].bias = b
 
             if ln_prefix is not None:
-                mod.model[-1].weight = make_torch_param(weights[f'{ln_prefix}/gamma:0'])
-                mod.model[-1].bias = make_torch_param(weights[f'{ln_prefix}/beta:0'])
+                assert isinstance(mod.model[-1], torch.nn.modules.normalization.LayerNorm)
+                gamma = make_torch_param(weights[f'{ln_prefix}/gamma:0'])
+                assert tuple(gamma.shape) == tuple(mod.model[-1].weight.shape)
+                mod.model[-1].weight = gamma
+
+                beta = make_torch_param(weights[f'{ln_prefix}/beta:0'])
+                assert tuple(beta.shape) == tuple(mod.model[-1].bias.shape)
+                mod.model[-1].bias = beta
 
         # Encoder
         hookup_mlp(
