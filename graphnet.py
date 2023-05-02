@@ -7,6 +7,7 @@ from kernels import unsorted_segsum as USS
 from kernels import gather_concat as GC
 from kernels import scatter_concat as SC
 
+PRE_SORT_EDGES = False
 USE_FUSED_GATHER_CONCAT = False
 USE_FUSED_SCATTER_CONCAT = False
 USE_FUSED_LN = False
@@ -51,7 +52,17 @@ def cells_to_edges(cells : torch.LongTensor) -> tuple[torch.LongTensor, torch.Lo
     unique_edges = edges.unique(dim=0, sorted=False)
     srcs, dsts = unique_edges[:, 0], unique_edges[:, 1]
 
-    return torch.cat([srcs, dsts], dim=0), torch.cat([dsts, srcs], dim=0)
+    srcs, dsts = torch.cat([srcs, dsts], dim=0), torch.cat([dsts, srcs], dim=0)
+
+    if PRE_SORT_EDGES:
+        idxs = torch.argsort(dsts, dim=0, stable=True)
+        srcs, dsts = srcs[idxs], dsts[idxs]
+
+        idxs = torch.argsort(srcs, dim=0, stable=True)
+        srcs, dsts = srcs[idxs], dsts[idxs]
+
+    return srcs, dsts
+
 
 @dataclass
 class GraphNetSample:
