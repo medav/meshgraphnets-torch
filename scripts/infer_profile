@@ -95,5 +95,6 @@ if __name__ == '__main__':
 
     print(avg_list.table(
             sort_by="self_cuda_time_total",
+            max_name_column_width=100,
             row_limit=100,
             top_level_events_only=False))
