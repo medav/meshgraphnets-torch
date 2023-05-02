@@ -368,7 +368,7 @@ class GraphNetModel(torch.nn.Module):
                 edge_set.sort_(num_nodes)
 
         for block in self.blocks:
-                graph = block(graph)
+            graph = block(graph)
 
         return self.decoder(graph)
 
