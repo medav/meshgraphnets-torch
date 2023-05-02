@@ -67,6 +67,6 @@ if __name__ == '__main__':
             npd = np.load(f'{tf_ref_path}/{i}.npz')
             y_ref = torch.Tensor(npd['y_ref']).to(dev)
             y_act = net(ds[i], unnorm=False)
-            print(f'Batch {i}:', torch.allclose(y_ref, y_act, rtol=1e-2, atol=1e-2))
+            print(f'Batch {i}:', torch.norm(y_ref - y_act))
 
 
