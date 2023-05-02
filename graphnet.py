@@ -163,6 +163,7 @@ class InvertableNorm(torch.nn.Module):
         self.register_buffer('eps', torch.Tensor([eps]))
         self.eps : torch.Tensor
         self.max_accumulations = max_accumulations
+        self.frozen = False
 
         self.register_buffer('running_sum', torch.zeros(shape))
         self.register_buffer('running_sum_sq', torch.zeros(shape))
@@ -191,7 +192,7 @@ class InvertableNorm(torch.nn.Module):
         n_batch_dims = x.ndim - len(self.shape)
         batch_dims = tuple(i for i in range(n_batch_dims))
 
-        if self.accum_count.item() < self.max_accumulations:
+        if self.accum_count.item() < self.max_accumulations and not self.frozen:
             self.running_sum += x.sum(dim=batch_dims)
             self.running_sum_sq += x.pow(2).sum(dim=batch_dims)
             self.num_accum += np.prod(list(x.shape[i] for i in batch_dims))

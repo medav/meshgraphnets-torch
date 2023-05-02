@@ -95,6 +95,7 @@ class IncomprNsModel(torch.nn.Module):
 
     def import_numpy_weights(self, weights : dict[str, np.ndarray]):
         def hookup_norm(mod, prefix):
+            mod.frozen = True
             mod.accum_count = GNN.make_torch_buffer(weights[f'{prefix}/num_accumulations:0'])
             mod.num_accum = GNN.make_torch_buffer(weights[f'{prefix}/acc_count:0'])
             mod.running_sum = GNN.make_torch_buffer(weights[f'{prefix}/acc_sum:0'])
