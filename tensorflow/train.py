@@ -76,8 +76,7 @@ def learner(model, params):
 
   with tf.train.MonitoredTrainingSession(
       hooks=[],
-      checkpoint_dir=FLAGS.checkpoint_dir,
-      save_checkpoint_secs=180) as sess:
+      checkpoint_dir=FLAGS.checkpoint_dir) as sess:
     learned_weights = {
       v.name: sess.run([v])[0]
       for v in tf.trainable_variables()
