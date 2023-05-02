@@ -12,19 +12,19 @@ from parameters import *
 
 
 def benchmark(model, datapath, bs, float_type=tf.float32):
-    ds = dataset.load_dataset(datapath, float_type=float_type)
-    ds = ds.repeat(None)
-    ds = dataset.batch_dataset(ds, bs)
-    ds = ds.prefetch(4)
-
-    inputs = tf.data.make_one_shot_iterator(ds).get_next()
-    loss_op = model.loss(inputs)
-
     num_samples = len([
         name for name in os.listdir(datapath)
         if os.path.isfile(os.path.join(datapath, name))
     ])
     num_iters = 1
+
+    ds = dataset.load_dataset(datapath, float_type=float_type)
+    ds = ds.repeat(None)
+    ds = dataset.batch_dataset(ds, bs)
+    ds = ds.prefetch(num_samples)
+
+    inputs = tf.data.make_one_shot_iterator(ds).get_next()
+    loss_op = model.loss(inputs)
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
