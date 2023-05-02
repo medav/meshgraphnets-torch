@@ -198,10 +198,17 @@ class Mlp(torch.nn.Module):
     def __init__(self, input_size : int, widths : list[int], layernorm=True):
         super().__init__()
         widths = [input_size] + widths
-        self.model = torch.nn.Sequential(*([
-            torch.nn.Linear(widths[i], widths[i+1])
-            for i in range(len(widths)-1)
-        ] + ([torch.nn.LayerNorm((widths[-1],))] if layernorm else [])))
+        modules = []
+        for i in range(len(widths) - 1):
+            if i < len(widths) - 2:
+                modules.append(torch.nn.Sequential(
+                    torch.nn.Linear(widths[i], widths[i + 1]), torch.nn.ReLU()))
+            else:
+                modules.append(torch.nn.Sequential(
+                    torch.nn.Linear(widths[i], widths[i + 1])))
+
+        if layernorm: modules.append(torch.nn.LayerNorm(widths[-1]))
+        self.model = torch.nn.Sequential(*modules)
 
     def forward(self, x): return self.model(x)
 
@@ -382,12 +389,12 @@ class GraphNetModel(torch.nn.Module):
 
             for l in range(len(mod.model) - layer_norm_off):
                 w = make_torch_param(weights[f'{mlp_prefix}/linear_{l}/w:0'].transpose(-1, -2))
-                assert tuple(w.shape) == tuple(mod.model[l].weight.shape)
-                mod.model[l].weight = w
+                assert tuple(w.shape) == tuple(mod.model[l][0].weight.shape)
+                mod.model[l][0].weight = w
 
                 b = make_torch_param(weights[f'{mlp_prefix}/linear_{l}/b:0'])
-                assert tuple(b.shape) == tuple(mod.model[l].bias.shape)
-                mod.model[l].bias = b
+                assert tuple(b.shape) == tuple(mod.model[l][0].bias.shape)
+                mod.model[l][0].bias = b
 
             if ln_prefix is not None:
                 assert isinstance(mod.model[-1], torch.nn.modules.normalization.LayerNorm)
