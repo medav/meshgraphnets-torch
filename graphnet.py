@@ -332,7 +332,7 @@ class GraphNetDecoder(torch.nn.Module):
     ):
         super().__init__()
         mlp_widths = [latent_size] * num_layers + [output_size]
-        self.node_mlp = Mlp(latent_size, mlp_widths, layernorm=True)
+        self.node_mlp = Mlp(latent_size, mlp_widths, layernorm=False)
 
     def forward(self, graph : MultiGraph) -> torch.Tensor:
         return self.node_mlp(graph.node_features)
