@@ -38,12 +38,14 @@ if __name__ == '__main__':
     model = {
         'flag_simple': 'cloth',
         'cylinder_flow': 'incomprns',
-        'deforming_plate': 'hyperel'
+        'deforming_plate': 'hyperel',
+        'airfoil': 'comprns'
     }[dataset_name]
 
     if model == 'cloth': import cloth as M
     elif model == 'incomprns': import incomprns as M
     elif model == 'hyperel': import hyperel as M
+    elif model == 'comprns': import comprns as M
     else: raise ValueError(f'Unknown model {model}')
 
     ds = M.dataset_type(f'./data/{dataset_name}_np/{split}')

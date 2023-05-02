@@ -38,11 +38,11 @@ processed from tfrecord into compressed Numpy format.
 $ ./scripts/download_dataset.sh deforming_plate data
 
 # 2. Preprocess dataset
-$ python ./scripts/convert_dataset.py deforming_plate train
+$ python ./scripts/convert_dataset deforming_plate train
 
 # 3. Create inference data
-$ python ./scripts/create_infer_data.py <dataset> <split> <batch_size>
+$ python ./scripts/create_infer_data <dataset> <split> <batch_size>
 
 # 4. Run inference benchmark
-$ python ./scripts/infer_bench.py <dataset> <input_file> <num_iters>
+$ python ./scripts/infer_bench <dataset> <input_file> <num_iters>
 ```

@@ -36,18 +36,20 @@ if __name__ == '__main__':
     input_path = sys.argv[2]
     batch_size = int(sys.argv[3])
     num_iters = int(sys.argv[4])
-    dev = torch.device('cuda')
-    dtype = torch.float16
+    dev = torch.device('cpu')
+    dtype = torch.float32
 
     model = {
         'flag_simple': 'cloth',
         'cylinder_flow': 'incomprns',
-        'deforming_plate': 'hyperel'
+        'deforming_plate': 'hyperel',
+        'airfoil': 'comprns'
     }[dataset_name]
 
     if model == 'cloth': import cloth as M
     elif model == 'incomprns': import incomprns as M
     elif model == 'hyperel': import hyperel as M
+    elif model == 'comprns': import comprns as M
     else: raise ValueError(f'Unknown model {model}')
 
     net = M.model_type().eval().to(dev).to(dtype)
