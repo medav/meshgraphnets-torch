@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+
+import sys
+import numpy as np
+import torch
+import time
+import glob
+
+torch.backends.cuda.matmul.allow_tf32 = True
+
+sys.path.append('.')
+import graphnet as GNN
+
+GNN.USE_FUSED_GATHER_CONCAT = False
+GNN.USE_FUSED_SCATTER_CONCAT = False
+GNN.USE_FUSED_LN = False
+GNN.USE_FUSED_MLP = False
+
+def usage():
+    print('Usage: python infer_validate.py <dataset> <learned_weights> <input_path> <tf_ref_path>')
+    print('    (dataset: flag_simple, cylinder_flow, deforming_plate)')
+    exit(1)
+
+class MgnDataset(torch.utils.data.Dataset):
+    def __init__(self, input_path, sample_type, batch_type, dev, dtype):
+        num_files = len(glob.glob(f'{input_path}/*.npz'))
+        self.batchs = [
+            GNN.collate_common([
+                GNN.load_npz_common(f'{input_path}/{i}.npz', sample_type)
+            ], batch_type).todev(dev).asdtype(dtype)
+            for i in range(num_files)
+        ]
+
+    def __len__(self): return len(self.batchs)
+    def __getitem__(self, i): return self.batchs[i]
+
+if __name__ == '__main__':
+    if len(sys.argv) != 5: usage()
+
+    dataset_name = sys.argv[1]
+    learned_weights = sys.argv[2]
+    input_path = sys.argv[3]
+    tf_ref_path = sys.argv[4]
+
+    dtype = torch.float32
+    dev = torch.device('cuda')
+
+    model = {
+        'flag_simple': 'cloth',
+        'cylinder_flow': 'incomprns',
+        'deforming_plate': 'hyperel'
+    }[dataset_name]
+
+    if model == 'cloth': import cloth as M
+    elif model == 'incomprns': import incomprns as M
+    elif model == 'hyperel': import hyperel as M
+    else: raise ValueError(f'Unknown model {model}')
+
+    net = M.model_type()
+    weights = np.load(learned_weights)
+    net.import_numpy_weights(weights)
+    net.eval().to(dev).to(dtype)
+    ds = MgnDataset(input_path, M.sample_type, M.batch_type, dev, dtype)
+
+    with torch.no_grad():
+        for i in range(len(ds)):
+            npd = np.load(f'{tf_ref_path}/{i}.npz')
+            y_ref = torch.Tensor(npd['y_ref']).to(dev)
+            y_act = net(ds[i], unnorm=False)
+            print(f'Batch {i}:', torch.allclose(y_ref, y_act, rtol=1e-2, atol=1e-2))
+
+
