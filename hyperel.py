@@ -200,7 +200,7 @@ class HyperElasticityModel(torch.nn.Module):
             mod.accum_count = GNN.make_torch_buffer(weights[f'{prefix}/num_accumulations:0'])
             mod.num_accum = GNN.make_torch_buffer(weights[f'{prefix}/acc_count:0'])
             mod.running_sum = GNN.make_torch_buffer(weights[f'{prefix}/acc_sum:0'])
-            mod.running_sum_squared = GNN.make_torch_buffer(weights[f'{prefix}/acc_sum_squared:0'])
+            mod.running_sum_sq = GNN.make_torch_buffer(weights[f'{prefix}/acc_sum_squared:0'])
 
         self.graph_net.import_numpy_weights(
             weights, ['mesh_edges_edge_fn', 'world_edges_edge_fn'])
