@@ -6,4 +6,4 @@ __pycache__
 .vscode
 *.sqlite
 *.nsys-rep
-infer-out-*.txt
+infer-*.txt
