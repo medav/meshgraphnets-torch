@@ -8,6 +8,13 @@ import random
 import math
 
 cur_path = os.path.dirname(os.path.realpath(__file__))
+gather_concat_cpu = load('gather_concat_cpu',
+    [f'{cur_path}/gather_concat_cpu.cc'],
+    extra_cflags=['-fopenmp', '-O3', '-march=native'],
+    extra_ldflags=['-lgomp', '-O3', '-march=native'],
+    verbose=False)
+
+import gather_concat_cpu
 
 if torch.cuda.is_available():
     gather_concat_cuda = load('gather_concat_cuda',
@@ -26,7 +33,10 @@ else:
 class ComputeEdgeOffsets(torch.autograd.Function):
     @staticmethod
     def forward(ctx, receivers : torch.Tensor, num_nodes : int) -> torch.Tensor:
-        return gather_concat_cuda.compute_edge_offsets(receivers, num_nodes)
+        M = gather_concat_cuda if receivers.device.type == 'cuda' \
+            else gather_concat_cpu
+
+        return M.compute_edge_offsets(receivers, num_nodes)
 
     @staticmethod
     def backward(ctx, grad): raise NotImplementedError()
@@ -44,12 +54,15 @@ class FusedGatherConcat(torch.autograd.Function):
         edge_features : list[torch.Tensor],
         edge_offsets : list[torch.Tensor]
     ):
+        M = gather_concat_cuda if node_features.device.type == 'cuda' \
+            else gather_concat_cpu
+
         if len(edge_features) == 1:
-            return gather_concat_cuda.fused_gather_concat_1e(
+            return M.fused_gather_concat_1e(
                 node_features, edge_features[0], edge_offsets[0]
             )
         elif len(edge_features) == 2:
-            return gather_concat_cuda.fused_gather_concat_2e(
+            return M.fused_gather_concat_2e(
                 node_features,
                 edge_features[0], edge_offsets[0],
                 edge_features[1], edge_offsets[1]
@@ -80,7 +93,7 @@ def test_compute_edge_offsets_1():
 
 def test_fused_gather_concat_1e_1():
     num_nodes = 4
-    receivers = torch.tensor([0, 0, 1, 2, 2, 3]).cuda()
+    receivers = torch.tensor([0, 0, 1, 2, 2, 3])
     edge_offs = compute_edge_offsets(receivers, num_nodes)
 
     node_features = torch.tensor([
@@ -88,7 +101,7 @@ def test_fused_gather_concat_1e_1():
         [1, 2, 3, 4],
         [2, 3, 4, 5],
         [3, 4, 5, 6]
-    ]).half().cuda()
+    ]).float()
 
     edge_features = torch.tensor([
         [0, 1, 2, 3],
@@ -97,18 +110,18 @@ def test_fused_gather_concat_1e_1():
         [3, 4, 5, 6],
         [4, 5, 6, 7],
         [5, 6, 7, 8]
-    ]).half().cuda()
+    ]).float()
 
     expected = torch.tensor([
         [0, 1, 2, 3, 1, 3, 5, 7],
         [1, 2, 3, 4, 2, 3, 4, 5],
         [2, 3, 4, 5, 7, 9, 11, 13],
         [3, 4, 5, 6, 5, 6, 7, 8]
-    ]).half().cuda()
+    ]).float()
 
     print(edge_offs)
 
-    actual = gather_concat_cuda.fused_gather_concat_1e(
+    actual = gather_concat_cpu.fused_gather_concat_1e(
         node_features, edge_features, edge_offs)
 
     print(expected)
