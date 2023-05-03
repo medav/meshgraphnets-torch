@@ -43,18 +43,18 @@ at::Tensor compute_edge_offsets(
 }
 
 
-template<size_t MAX_D>
+template<typename scalar_t, size_t MAX_D>
 __global__ void device_fused_gather_concat_2e(
-    const half * nf, // [N, D]
-    const half * ef0, const int64_t * ef0_offsets, // [N, D], [N]
-    const half * ef1, const int64_t * ef1_offsets, // [N, D], [N]
-    half * out, // [N, 3D]
+    const scalar_t * nf, // [N, D]
+    const scalar_t * ef0, const int64_t * ef0_offsets, // [N, D], [N]
+    const scalar_t * ef1, const int64_t * ef1_offsets, // [N, D], [N]
+    scalar_t * out, // [N, 3D]
     const int64_t N,
     const int64_t NE0,
     const int64_t NE1,
     const int64_t D
 ) {
-    __shared__ half accum[MAX_D];
+    __shared__ scalar_t accum[MAX_D];
 
     const int NES = NE1 == 0 ? 1 : 2;
     const int node_i = blockIdx.x;
@@ -70,25 +70,25 @@ __global__ void device_fused_gather_concat_2e(
         out[out_row_off + node_d] = nf[row_off + node_d];
     } else if (node_d < 2*D) {
         const int d_off = node_d - D;
-        accum[d_accum_off] = __float2half(0.0f);
+        accum[d_accum_off] = (scalar_t)(0.0f);
 
         const int e_start = (node_i == 0) ? 0 : ef0_offsets[node_i - 1];
         const int e_end = ef0_offsets[node_i];
 
         for (int e = e_start; e < e_end; e++) {
-            accum[d_accum_off] = __hadd(accum[d_accum_off], ef0[e * D + d_off]);
+            accum[d_accum_off] = (accum[d_accum_off] + ef0[e * D + d_off]);
         }
 
         out[out_row_off + node_d] = accum[d_accum_off];
     } else {
         const int d_off = node_d - D - D;
-        accum[d_accum_off] = __float2half(0.0f);
+        accum[d_accum_off] = (scalar_t)(0.0f);
 
         const int e_start = (node_i == 0) ? 0 : ef1_offsets[node_i - 1];
         const int e_end = ef1_offsets[node_i];
 
         for (int e = e_start; e < e_end; e++) {
-            accum[d_accum_off] = __hadd(accum[d_accum_off], ef1[e * D + d_off]);
+            accum[d_accum_off] = (accum[d_accum_off] + ef1[e * D + d_off]);
         }
 
         out[out_row_off + node_d] = accum[d_accum_off];
@@ -119,16 +119,18 @@ at::Tensor fused_gather_concat_2e(
 
     at::Tensor out = at::zeros({NN, 3*D}, nf.options());
 
-    device_fused_gather_concat_2e<256><<<NN, 3*D>>>(
-        (half *)nf.data_ptr<at::Half>(),
-        (half *)ef0.data_ptr<at::Half>(), eoffs0.data_ptr<int64_t>(),
-        (half *)ef1.data_ptr<at::Half>(), eoffs1.data_ptr<int64_t>(),
-        (half *)out.data_ptr<at::Half>(),
-        NN,
-        NE0,
-        NE1,
-        D
-    );
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(nf.scalar_type(), "device_fused_gather_concat_2e", [&] {
+        device_fused_gather_concat_2e<scalar_t, 256><<<NN, 3*D>>>(
+            (scalar_t *)nf.data_ptr<scalar_t>(),
+            (scalar_t *)ef0.data_ptr<scalar_t>(), eoffs0.data_ptr<int64_t>(),
+            (scalar_t *)ef1.data_ptr<scalar_t>(), eoffs1.data_ptr<int64_t>(),
+            (scalar_t *)out.data_ptr<scalar_t>(),
+            NN,
+            NE0,
+            NE1,
+            D
+        );
+    });
 
     return out;
 }
@@ -152,16 +154,18 @@ at::Tensor fused_gather_concat_1e(
 
     at::Tensor out = at::zeros({NN, 2*D}, nf.options());
 
-    device_fused_gather_concat_2e<128><<<NN, 2*D>>>(
-        (half *)nf.data_ptr<at::Half>(),
-        (half *)ef0.data_ptr<at::Half>(), eoffs0.data_ptr<int64_t>(),
-        nullptr, nullptr,
-        (half *)out.data_ptr<at::Half>(),
-        NN,
-        NE0,
-        0,
-        D
-    );
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(nf.scalar_type(), "device_fused_gather_concat_2e", [&] {
+        device_fused_gather_concat_2e<scalar_t, 128><<<NN, 2*D>>>(
+            (scalar_t *)nf.data_ptr<scalar_t>(),
+            (scalar_t *)ef0.data_ptr<scalar_t>(), eoffs0.data_ptr<int64_t>(),
+            nullptr, nullptr,
+            (scalar_t *)out.data_ptr<scalar_t>(),
+            NN,
+            NE0,
+            0,
+            D
+        );
+    });
 
     return out;
 }

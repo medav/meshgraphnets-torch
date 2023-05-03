@@ -8,14 +8,12 @@ import random
 import math
 
 cur_path = os.path.dirname(os.path.realpath(__file__))
-cutlass_path = '/nobackup/medavies/cutlass'
 
 if torch.cuda.is_available():
     gather_concat_cuda = load('gather_concat_cuda',
-        [f'{cur_path}/gather_concat.cu'],
-        extra_include_paths=[f'{cutlass_path}/include', f'{cutlass_path}/tools/util/include'],
-        extra_cuda_cflags=['-O3', '--expt-relaxed-constexpr', '-std=c++17', '-arch=sm_80'],
-        extra_ldflags=['-O3', f'-L{cutlass_path}/build/tools/library', '-lcutlass'],
+        [f'{cur_path}/gather_concat_cuda.cu'],
+        extra_cuda_cflags=['-O3', '--expt-relaxed-constexpr', '-std=c++17'],
+        extra_ldflags=['-O3'],
         verbose=False)
 
     import gather_concat_cuda
