@@ -47,7 +47,6 @@ class UnsortedSegmentSum(torch.autograd.Function):
         M = cuda_unsorted_segsum if data.device.type == 'cuda' else cpu_unsorted_segsum
 
         assert M is not None, f'No backend for {data.device}'
-        print(data.dtype)
 
         if len(data.shape) == 2:
             return M.unsorted_segment_sum_fwd(data, indices, num_segments)
